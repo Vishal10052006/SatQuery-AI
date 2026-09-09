@@ -167,16 +167,13 @@ def generate_evidence_json(
     }
 
     if raster_metadata:
-        evidence["raster_metadata"] = {
-            "crs": raster_metadata.get("crs"),
-            "crs_epsg": raster_metadata.get("crs_epsg"),
-            "resolution": raster_metadata.get("resolution"),
-            "dimensions": {
-                "width": raster_metadata.get("width"),
-                "height": raster_metadata.get("height"),
-            },
-            "bounds": raster_metadata.get("bounds"),
-        }
+        meta_dict = dict(raster_metadata)
+        if "width" in meta_dict or "height" in meta_dict:
+            meta_dict["dimensions"] = {
+                "width": meta_dict.get("width"),
+                "height": meta_dict.get("height"),
+            }
+        evidence["raster_metadata"] = meta_dict
 
     if output_path:
         out_file = Path(output_path)
