@@ -4,9 +4,8 @@ Specialist registration for the M4 ToolRegistry.
 This module is the integration boundary between M4 and the
 actual specialist implementations supplied by other modules.
 
-M4 does not import or depend on the internal implementation
-of M1/M2/M3. It receives specialist objects and wraps them
-with the appropriate adapter.
+M4 does not depend on specialist internals. Each specialist
+is wrapped behind the stable M4 ToolResult contract.
 """
 
 from __future__ import annotations
@@ -32,36 +31,10 @@ def register_specialists(
     gis: Any | None = None,
 ) -> ToolRegistry:
     """
-    Register whichever real specialist implementations are available.
+    Register whichever specialist implementations are available.
 
-    Parameters
-    ----------
-    registry:
-        M4 ToolRegistry instance.
-
-    vqa:
-        Real M1/VQA specialist instance.
-
-    change_detection:
-        Real M2 change-detection specialist instance.
-
-    grounding:
-        Real M2 grounding specialist instance.
-
-    optical_sar:
-        Real M3 optical/SAR specialist instance.
-
-    Returns
-    -------
-    ToolRegistry
-        The same registry, populated with available specialists.
-
-    Notes
-    -----
-    gis:
-        Real M5 GIS / geospatial specialist instance.
-
-    M5 is registered when a GIS specialist is supplied.
+    Each external specialist is converted into the stable M4
+    ToolRegistry interface through an adapter.
     """
 
     if vqa is not None:

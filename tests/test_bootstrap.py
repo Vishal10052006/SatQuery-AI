@@ -91,3 +91,28 @@ def test_bootstrap_creates_independent_registries() -> None:
     assert controller_b.registry.is_registered(
         ToolName.M2_CHANGE_DETECTION
     )
+
+
+def test_bootstrap_registers_m5_gis() -> None:
+    """Runtime bootstrap should register an injected M5 specialist."""
+
+    from types import SimpleNamespace
+
+    from app.agents.bootstrap import build_m4_controller
+    from app.query.schemas import ToolName
+
+    def gis(**kwargs):
+        return SimpleNamespace(
+            answer="GIS complete.",
+            confidence=0.90,
+            metrics={},
+            warnings=[],
+            mask_geojson=None,
+            bboxes=None,
+        )
+
+    controller = build_m4_controller(gis=gis)
+
+    assert controller.registry.is_registered(
+        ToolName.M5_GIS
+    )

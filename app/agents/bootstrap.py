@@ -23,6 +23,7 @@ def build_m4_controller(
     change_detection: Any | None = None,
     grounding: Any | None = None,
     optical_sar: Any | None = None,
+    gis: Any | None = None,
 ) -> AgentController:
     """
     Build a fully configured M4 AgentController.
@@ -45,6 +46,9 @@ def build_m4_controller(
     optical_sar:
         Real M3 optical/SAR specialist.
 
+    gis:
+        Real M5 GIS/geospatial specialist.
+
     Returns
     -------
     AgentController
@@ -59,6 +63,7 @@ def build_m4_controller(
         change_detection=change_detection,
         grounding=grounding,
         optical_sar=optical_sar,
+        gis=gis,
     )
 
     return AgentController(
