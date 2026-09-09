@@ -9,12 +9,11 @@ This module extracts:
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 import numpy as np
 import rasterio
 from rasterio.transform import Affine
 
-from geospatial.coordinates import pixel_to_geo
 from geospatial.pipeline import run_geospatial_pipeline
 
 
@@ -22,7 +21,7 @@ def export_layer_to_geotiff(
     data_array: np.ndarray,
     output_path: Union[str, Path],
     crs: Any,
-    transform: Union[Affine, list, tuple],
+    transform: Optional[Union[Affine, Sequence[float], Any]] = None,
     nodata: Optional[float] = None,
 ) -> Path:
     """
@@ -32,7 +31,7 @@ def export_layer_to_geotiff(
         data_array: 2D array (H, W) or 3D array (Channels, H, W).
         output_path: Path to the destination .tif file.
         crs: Coordinate reference system (EPSG code string or CRS object).
-        transform: Affine transform matrix.
+        transform: Affine transform matrix or sequence of 6 coefficients.
         nodata: Optional nodata value.
 
     Returns:
@@ -41,9 +40,14 @@ def export_layer_to_geotiff(
     out_file = Path(output_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
-    if not isinstance(transform, Affine):
-        if len(transform) >= 6:
-            transform = Affine(*transform[:6])
+    if transform is None:
+        affine_transform = Affine.identity()
+    elif isinstance(transform, Affine):
+        affine_transform = transform
+    elif hasattr(transform, "__len__") and len(transform) >= 6:
+        affine_transform = Affine(*transform[:6])
+    else:
+        affine_transform = Affine.identity()
 
     if data_array.ndim == 2:
         count = 1
@@ -75,7 +79,7 @@ def export_layer_to_geotiff(
         count=count,
         dtype=dtype,
         crs=crs,
-        transform=transform,
+        transform=affine_transform,
         nodata=nodata,
     ) as dst:
         dst.write(data_to_write)
@@ -122,7 +126,7 @@ def export_all_layers_to_geotiff(
 def extract_gis_evidence_from_m3(
     optical_path: str,
     sar_path: str,
-    scl_path: str = None,
+    scl_path: Optional[str] = None,
     weights_path: str = "modules/optical_sar/weights/m3_optical_sar_model.pth",
 ) -> Dict[str, Any]:
     """
@@ -130,9 +134,9 @@ def extract_gis_evidence_from_m3(
     Dynamically imports M3 modules if available.
     """
     try:
-        from modules.optical_sar.pipeline import run_optical_sar_pipeline
-        from modules.optical_sar.fusion.model import OpticalSARModel
-        from modules.optical_sar.optical.features import compute_optical_features
+        from modules.optical_sar.pipeline import run_optical_sar_pipeline  # type: ignore
+        from modules.optical_sar.fusion.model import OpticalSARModel  # type: ignore
+        from modules.optical_sar.optical.features import compute_optical_features  # type: ignore
     except ImportError as e:
         raise ImportError(
             f"Module 3 (Optical + SAR) dependencies not found: {e}. "
@@ -247,13 +251,13 @@ def process_m3_evidence_to_m5(
     # 2. Resolve Problem 1 & 2: M3 does not output change mask or localized bounding boxes.
     # Synthesize scene ROI bounding box [0, 0, w, h] so M5 pipeline can geolocate
     # and compute coordinates, area, and vector polygons.
-    bounding_boxes = None
+    bounding_boxes: Optional[List[List[float]]] = None
     if change_mask is None:
         if hasattr(ref_layer, "shape") and len(ref_layer.shape) >= 2:
             h, w = ref_layer.shape[-2], ref_layer.shape[-1]
         else:
             w, h = m3_gis_evidence.get("spatial_shape", (64, 64))
-        bounding_boxes = [[0, 0, w, h]]
+        bounding_boxes = [[0.0, 0.0, float(w), float(h)]]
 
     is_active_target = bool(
         target and str(target).lower() not in ["background", "none", "no_change", "unspecified_target"]
@@ -345,7 +349,7 @@ def process_m3_result(
 
     # Try compute optical features if helper is available
     try:
-        from modules.optical_sar.optical.features import compute_optical_features
+        from modules.optical_sar.optical.features import compute_optical_features  # type: ignore
         if optical_data is not None:
             features = compute_optical_features(optical_data)
             if "ndvi" in features:

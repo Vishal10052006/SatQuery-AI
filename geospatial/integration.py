@@ -7,16 +7,13 @@ to invoke the geospatial processing engine.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-import numpy as np
+from typing import Any, Dict, List, Union
 from pyproj import CRS, Transformer
-import shapely.geometry
-from shapely.geometry import Polygon, mapping
+from shapely.geometry import Polygon
 
-from geospatial.area import calculate_polygon_area, calculate_total_area
 from geospatial.evidence import generate_evidence_json, generate_geojson
 from geospatial.pipeline import run_geospatial_pipeline
-from geospatial.schema import EvidenceOutput, M2M3Payload
+from geospatial.schema import M2M3Payload
 from geospatial.visualization import generate_folium_map
 
 
@@ -29,6 +26,15 @@ def _is_m2_detector_payload(data: Dict[str, Any]) -> bool:
     if "evidence" in data and isinstance(data["evidence"], dict):
         if "regions" in data["evidence"] or "changed_pixels" in data["evidence"]:
             return True
+    return False
+
+
+def _is_m3_payload(data: Dict[str, Any]) -> bool:
+    """Check if dictionary matches M3 multimodal Optical+SAR pipeline output format."""
+    if "gis_evidence" in data and ("optical" in data or "sar" in data or "registration" in data or "fusion" in data):
+        return True
+    if "optical" in data and "sar" in data and ("prediction" in data or "fusion" in data):
+        return True
     return False
 
 
@@ -97,6 +103,7 @@ def process_m2_detector_output(
             reg_confidence = float(reg.get("confidence", confidence))
 
             # Polygon extraction
+            poly = None
             poly_geo = reg.get("polygon_geo")
             if poly_geo and len(poly_geo) >= 3:
                 # Reproject points [x, y] in native CRS to [lon, lat] in EPSG:4326
@@ -132,7 +139,7 @@ def process_m2_detector_output(
                     [tl_lon, br_lat],
                     [tl_lon, tl_lat],
                 ]
-            elif poly_geo:
+            elif poly is not None:
                 min_lon, min_lat, max_lon, max_lat = poly.bounds
                 geo_bbox = [min_lon, min_lat, max_lon, max_lat]
                 polygon_coords = [
@@ -320,6 +327,205 @@ def process_m2_detector_output(
     return evidence
 
 
+def process_m3_pipeline_payload(
+    payload: Union[Dict[str, Any], str, Path],
+    output_dir: Union[str, Path] = "output",
+) -> Dict[str, Any]:
+    """
+    Process an M3 Multimodal (Optical + SAR) pipeline output payload and produce
+    GIS-compliant GeoJSON, interactive Folium satellite map, and evidence.json.
+
+    Handles:
+        1. Native projected CRS (e.g. EPSG:32632) and coordinates
+        2. Bounds dict or GeoJSON polygon footprint from gis_evidence
+        3. Multimodal target classification (e.g. "Vegetation", "aircraft_hangar")
+        4. Registration and fusion validation metadata
+    """
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Load payload from file or dict
+    if isinstance(payload, (str, Path)):
+        p_path = Path(payload)
+        if p_path.is_file():
+            with open(p_path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+        else:
+            raw_data = json.loads(str(payload))
+    elif isinstance(payload, dict):
+        raw_data = payload
+    else:
+        raise TypeError(f"Expected dict or path to JSON, got {type(payload).__name__}")
+
+    # 2. Extract classification and confidence
+    pred = raw_data.get("prediction", {})
+    target = (
+        pred.get("predicted_class_name")
+        or pred.get("predicted_class")
+        or "multimodal_detection"
+    )
+    if isinstance(target, int):
+        target = pred.get("predicted_class_name") or f"class_{target}"
+    target = str(target)
+
+    conf_data = raw_data.get("confidence", {})
+    if isinstance(conf_data, dict):
+        confidence = float(conf_data.get("score", pred.get("model_confidence", 0.85)))
+    else:
+        confidence = float(conf_data)
+
+    # 3. Extract GIS metadata
+    gis_ev = raw_data.get("gis_evidence", {})
+    reg = raw_data.get("registration", {})
+    native_crs = gis_ev.get("crs") or reg.get("crs") or "EPSG:32632"
+    res_meters = gis_ev.get("resolution_meters") or reg.get("resolution") or [10.0, 10.0]
+    pixel_dims = gis_ev.get("pixel_dimensions") or raw_data.get("optical", {}).get("shape", [4, 512, 512])[-2:]
+
+    # 4. Extract Footprint Polygon & Bounds
+    poly_geojson = gis_ev.get("polygon_geojson")
+    bounds_obj = gis_ev.get("bounds")
+
+    # Reproject from native CRS to standard WGS84 (EPSG:4326)
+    source_crs = CRS.from_user_input(native_crs)
+    target_crs = CRS.from_user_input("EPSG:4326")
+    transformer = Transformer.from_crs(source_crs, target_crs, always_xy=True)
+
+    polygons_4326: List[Polygon] = []
+    if poly_geojson and "coordinates" in poly_geojson:
+        coords_raw = poly_geojson["coordinates"][0]
+        pts_4326 = [list(transformer.transform(pt[0], pt[1])) for pt in coords_raw]
+        poly = Polygon(pts_4326)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        polygons_4326.append(poly)
+    elif bounds_obj:
+        if isinstance(bounds_obj, dict):
+            min_x, min_y = float(bounds_obj["min_x"]), float(bounds_obj["min_y"])
+            max_x, max_y = float(bounds_obj["max_x"]), float(bounds_obj["max_y"])
+        else:
+            min_x, min_y, max_x, max_y = float(bounds_obj[0]), float(bounds_obj[1]), float(bounds_obj[2]), float(bounds_obj[3])
+        pts_raw = [
+            [min_x, min_y],
+            [max_x, min_y],
+            [max_x, max_y],
+            [min_x, max_y],
+            [min_x, min_y],
+        ]
+        pts_4326 = [list(transformer.transform(pt[0], pt[1])) for pt in pts_raw]
+        poly = Polygon(pts_4326)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        polygons_4326.append(poly)
+
+    # Calculate geographic bounds & center
+    all_lons: List[float] = []
+    all_lats: List[float] = []
+    for p in polygons_4326:
+        min_lon, min_lat, max_lon, max_lat = p.bounds
+        all_lons.extend([min_lon, max_lon])
+        all_lats.extend([min_lat, max_lat])
+
+    if all_lons and all_lats:
+        overall_bounds = [min(all_lons), min(all_lats), max(all_lons), max(all_lats)]
+        center_lon = (min(all_lons) + max(all_lons)) / 2.0
+        center_lat = (min(all_lats) + max(all_lats)) / 2.0
+    else:
+        overall_bounds = [0.0, 0.0, 0.0, 0.0]
+        center_lat, center_lon = 0.0, 0.0
+
+    geo_coords_summary = {
+        "center": [round(center_lat, 6), round(center_lon, 6)],
+        "overall_bounds_4326": [round(c, 6) for c in overall_bounds],
+        "polygon_centroids": [
+            [round(p.centroid.y, 6), round(p.centroid.x, 6)] for p in polygons_4326
+        ],
+        "bbox_centroids": [[round(center_lat, 6), round(center_lon, 6)]],
+    }
+
+    # Synthesize bounding box entry
+    h_px, w_px = float(pixel_dims[0]), float(pixel_dims[1])
+    bbox_entry = {
+        "pixel_bbox": [0.0, 0.0, w_px, h_px],
+        "geo_bbox": [round(c, 6) for c in overall_bounds],
+        "centroid": [round(center_lon, 6), round(center_lat, 6)],
+        "polygon_coords": [
+            [overall_bounds[0], overall_bounds[1]],
+            [overall_bounds[2], overall_bounds[1]],
+            [overall_bounds[2], overall_bounds[3]],
+            [overall_bounds[0], overall_bounds[3]],
+            [overall_bounds[0], overall_bounds[1]],
+        ],
+        "target": target,
+        "confidence": confidence,
+    }
+
+    # 5. Output file paths
+    geojson_path = out_dir / "evidence.geojson"
+    map_path = out_dir / "map.html"
+    evidence_path = out_dir / "evidence.json"
+
+    # 6. Generate GeoJSON
+    generate_geojson(
+        polygons=polygons_4326,
+        bboxes_geo=[bbox_entry],
+        target=target,
+        confidence=confidence,
+        output_path=geojson_path,
+    )
+
+    # 7. Generate interactive Folium map
+    if all_lons and all_lats:
+        generate_folium_map(
+            polygons=polygons_4326,
+            bboxes_geo=[bbox_entry],
+            center_coords=(center_lat, center_lon),
+            target=target,
+            confidence=confidence,
+            output_html_path=map_path,
+        )
+
+    # 8. Generate evidence.json
+    raster_meta = {
+        "crs": native_crs,
+        "resolution": res_meters,
+        "pixel_dimensions": pixel_dims,
+        "geospatial_reference_available": True,
+        "bounds": bounds_obj,
+    }
+
+    evidence = generate_evidence_json(
+        target=target,
+        confidence=confidence,
+        change_detected=True,
+        bounding_boxes=[bbox_entry],
+        geographic_coordinates=geo_coords_summary,
+        polygons=polygons_4326,
+        geojson_path=geojson_path,
+        map_path=map_path,
+        raster_metadata=raster_meta,
+        output_path=evidence_path,
+    )
+
+    # Attach M3 Multimodal AI and Fusion Metadata
+    evidence["m3_multimodal_metadata"] = {
+        "status": raw_data.get("status"),
+        "optical": raw_data.get("optical", {}),
+        "sar": raw_data.get("sar", {}),
+        "registration": reg,
+        "fusion": raw_data.get("fusion", {}),
+        "prediction": pred,
+        "confidence": conf_data,
+        "registration_passed": reg.get("passed", False),
+        "registration_score": reg.get("registration_score", 0.0),
+    }
+
+    # Re-save updated evidence.json
+    with open(evidence_path, "w", encoding="utf-8") as f:
+        json.dump(evidence, f, indent=2)
+
+    return evidence
+
+
 def process_m2_m3_result(
     payload: Union[Dict[str, Any], M2M3Payload, str, Path],
     output_dir: Union[str, Path] = "output",
@@ -330,7 +536,8 @@ def process_m2_m3_result(
     Automatically detects payload format:
         A) M2 Change Detector format (with 'regions', 'crs', 'transform', etc.)
         B) M4 SpecialistResult wrapper (with inner 'evidence' object)
-        C) Standard file-based payload ('reference_image', 'change_mask', 'bounding_boxes')
+        C) M3 Multimodal (Optical + SAR) analysis output (with 'gis_evidence', 'fusion', etc.)
+        D) Standard file-based payload ('reference_image', 'change_mask', 'bounding_boxes')
     """
     # Parse into dict if file or JSON string
     if isinstance(payload, (str, Path)):
@@ -353,6 +560,10 @@ def process_m2_m3_result(
     # If payload is an M2 detector output or M4 wrapper, route to process_m2_detector_output
     if _is_m2_detector_payload(data):
         return process_m2_detector_output(data, output_dir=output_dir)
+
+    # If payload is an M3 multimodal pipeline output, route to process_m3_pipeline_payload
+    if _is_m3_payload(data):
+        return process_m3_pipeline_payload(data, output_dir=output_dir)
 
     # Otherwise route to standard file-based M5 pipeline
     parsed_payload = M2M3Payload.from_dict(data)

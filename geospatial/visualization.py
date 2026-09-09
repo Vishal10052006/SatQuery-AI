@@ -4,10 +4,9 @@ Generates rich Folium maps with detected regions, bounding boxes, popups, and la
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 import folium
-from folium import Element, LayerControl, TileLayer
-import shapely.geometry
+from folium import LayerControl, TileLayer
 from shapely.geometry import Polygon, MultiPolygon
 from shapely.geometry import mapping
 
@@ -15,7 +14,7 @@ from geospatial.area import calculate_polygon_area
 
 
 def generate_folium_map(
-    polygons: Optional[List[Union[Polygon, MultiPolygon]]] = None,
+    polygons: Optional[Sequence[Union[Polygon, MultiPolygon]]] = None,
     bboxes_geo: Optional[List[Dict[str, Any]]] = None,
     center_coords: Optional[Tuple[float, float]] = None,
     target: str = "detected_change",
@@ -139,7 +138,7 @@ def generate_folium_map(
             tooltip=folium.Tooltip(
                 f"<b>{target.upper()}</b> | Area: {area_info['area_hectares']:.3f} ha ({area_info['area_sq_meters']:,.0f} m²)"
             ),
-            popup=folium.Popup(popup_html, max_width=320),
+            popup=cast(Any, folium.Popup(popup_html, max_width=320)),
         ).add_to(poly_group)
 
     poly_group.add_to(m)

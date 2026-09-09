@@ -1,0 +1,90 @@
+{
+  "status": "partial",
+  "optical": {
+    "bands": ["B02", "B03", "B04", "B08"],
+    "cloud_fraction": 0.0,
+    "valid_fraction": 1.0,
+    "cloud_mask_status": "applied_external",
+    "shape": [4, 512, 512]
+  },
+  "sar": {
+    "polarizations": ["VV", "VH"],
+    "valid_fraction": 1.0,
+    "is_calibrated": true,
+    "is_db": true,
+    "terrain_corrected": false,
+    "terrain_correction_status": "dem_not_provided",
+    "shape": [2, 512, 512]
+  },
+  "registration": {
+    "crs": "EPSG:32632",
+    "resolution": [10.0, 10.0],
+    "overlap_ratio": 1.0,
+    "mutual_information": 0.0014,
+    "structural_score": 0.0,
+    "alignment_error": 0.0,
+    "registration_score": 0.4005,
+    "passed": false,
+    "fine_alignment_applied": "skipped"
+  },
+  "fusion": {
+    "method": "early_channel_stacking",
+    "channels": ["B02", "B03", "B04", "B08", "VV", "VH"],
+    "shape": [6, 512, 512]
+  },
+  "prediction": {
+    "predicted_class": 0,
+    "predicted_class_name": "Vegetation",
+    "model_confidence": 0.994,
+    "probabilities": [0.994, 0.0059, 0.0001],
+    "class_probabilities_breakdown": {
+      "Vegetation": 0.994,
+      "Bare Soil": 0.0059,
+      "Water": 0.0001
+    },
+    "fusion_type": "feature",
+    "status": "success",
+    "notes": "Inference executed with trained model weights."
+  },
+  "confidence": {
+    "score": 0.878,
+    "level": "high",
+    "components": {
+      "optical_quality": 1.0,
+      "sar_quality": 1.0,
+      "registration_quality": 0.4005,
+      "model_confidence": 0.994
+    },
+    "missing_modalities": [],
+    "weights_used": {
+      "optical_quality": 0.25,
+      "sar_quality": 0.2,
+      "registration_quality": 0.2,
+      "model_confidence": 0.35
+    },
+    "notes": "Full multimodal confidence calculated successfully."
+  },
+  "gis_evidence": {
+    "crs": "EPSG:32632",
+    "bounds": {
+      "min_x": 684000.0,
+      "min_y": 5334000.0,
+      "max_x": 689120.0,
+      "max_y": 5339120.0
+    },
+    "polygon_geojson": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [684000.0, 5334000.0],
+          [689120.0, 5334000.0],
+          [689120.0, 5339120.0],
+          [684000.0, 5339120.0],
+          [684000.0, 5334000.0]
+        ]
+      ]
+    },
+    "resolution_meters": [10.0, 10.0],
+    "pixel_dimensions": [512, 512]
+  }
+}

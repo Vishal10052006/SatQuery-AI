@@ -8,20 +8,18 @@ from pathlib import Path
 import pytest
 import numpy as np
 import shapely.geometry
-from shapely.geometry import Polygon
 
 from geospatial.metadata import read_geotiff_metadata
 from geospatial.coordinates import pixel_to_geo, pixel_bbox_to_geo_bbox
-from geospatial.polygons import mask_to_polygons, bbox_to_polygon, load_mask
+from geospatial.polygons import mask_to_polygons
 from geospatial.area import calculate_polygon_area, calculate_total_area
 from geospatial.visualization import generate_folium_map
 from geospatial.evidence import generate_geojson, generate_evidence_json
 from geospatial.pipeline import run_geospatial_pipeline
-from geospatial.schema import M2M3Payload, EvidenceOutput
-from geospatial.integration import process_m2_m3_result, process_m2_detector_output
+from geospatial.schema import M2M3Payload
+from geospatial.integration import process_m2_m3_result
 from geospatial.m3_adapter import (
     export_layer_to_geotiff,
-    export_all_layers_to_geotiff,
     process_m3_evidence_to_m5,
     process_m3_result,
 )
@@ -35,6 +33,7 @@ M2_RESULT_JSON = DATA_MOCK_DIR / "m2_result.json"
 M2_GEOREF_JSON = DATA_MOCK_DIR / "m2_georef_output.json"
 M2_NON_GEOREF_JSON = DATA_MOCK_DIR / "m2_non_georef_output.json"
 M4_SPECIALIST_JSON = DATA_MOCK_DIR / "m4_specialist_result.json"
+M3_PIPELINE_JSON = DATA_MOCK_DIR / "m3_pipeline_output.json"
 OUTPUT_TEST_DIR = BASE_DIR / "output" / "test_run"
 
 
@@ -358,11 +357,10 @@ class TestM5Geospatial:
 
         # Invalid type
         with pytest.raises(TypeError):
-            process_m2_m3_result(12345)
+            process_m2_m3_result(12345)  # type: ignore[arg-type]
 
     def test_14_export_layer_to_geotiff_2d_and_3d(self):
         """Verify exporting 2D (NDVI) and 3D (Multispectral/SAR) arrays to GeoTIFF."""
-        from rasterio.transform import from_origin
         import rasterio
 
         meta = read_geotiff_metadata(SAMPLE_GEOTIFF)
@@ -541,6 +539,26 @@ class TestM5Geospatial:
         assert (out_dir / "layers" / "sar_polarimetric.tif").exists()
         assert (out_dir / "layers" / "fused_multimodal.tif").exists()
         assert evidence["m3_validation"]["registration_passed"] is True
+
+    def test_20_process_m3_pipeline_json_payload(self):
+        """Verify process_m2_m3_result processes official M3 pipeline output payload."""
+        out_dir = OUTPUT_TEST_DIR / "m3_official_pipeline_payload"
+        evidence = process_m2_m3_result(M3_PIPELINE_JSON, output_dir=out_dir)
+
+        assert evidence["target"] == "Vegetation"
+        assert evidence["confidence"] == 0.878
+        assert evidence["change_detected"] is True
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+        assert evidence["area"]["total_sq_meters"] > 0
+        assert evidence["area"]["total_hectares"] > 0
+        assert evidence["raster_metadata"]["crs"] == "EPSG:32632"
+        assert evidence["m3_multimodal_metadata"]["registration_score"] == 0.4005
+        assert evidence["m3_multimodal_metadata"]["registration_passed"] is False
+        assert evidence["m3_multimodal_metadata"]["prediction"]["predicted_class_name"] == "Vegetation"
+
 
 
 

@@ -5,19 +5,22 @@ Creates a valid sample GeoTIFF, change mask, and upstream M2 detection JSON.
 
 import json
 from pathlib import Path
+from typing import Optional, Union
 import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
 
-def create_sample_mock_data(output_dir: Path = None):
+def create_sample_mock_data(output_dir: Optional[Union[str, Path]] = None):
     if output_dir is None:
-        output_dir = Path(__file__).resolve().parent
-    output_dir.mkdir(parents=True, exist_ok=True)
+        out_path = Path(__file__).resolve().parent
+    else:
+        out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
 
-    geotiff_path = output_dir / "sample.tif"
-    mask_npy_path = output_dir / "change_mask.npy"
-    m2_result_path = output_dir / "m2_result.json"
+    geotiff_path = out_path / "sample.tif"
+    mask_npy_path = out_path / "change_mask.npy"
+    m2_result_path = out_path / "m2_result.json"
 
     # 1. Create realistic multi-band GeoTIFF
     # Dimensions: 256 x 256, 3 bands (RGB)

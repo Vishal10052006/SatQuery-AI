@@ -5,13 +5,12 @@ geodesic area computation, map visualization, and evidence generation.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 import numpy as np
 
 from geospatial.metadata import read_geotiff_metadata
 from geospatial.coordinates import pixel_bbox_to_geo_bbox, pixel_to_geo
 from geospatial.polygons import mask_to_polygons
-from geospatial.area import calculate_total_area
 from geospatial.visualization import generate_folium_map
 from geospatial.evidence import generate_geojson, generate_evidence_json
 
@@ -19,7 +18,7 @@ from geospatial.evidence import generate_geojson, generate_evidence_json
 def run_geospatial_pipeline(
     reference_geotiff: Union[str, Path],
     change_mask: Optional[Union[str, Path, np.ndarray]] = None,
-    bounding_boxes: Optional[List[Union[List[float], Dict[str, float]]]] = None,
+    bounding_boxes: Optional[Sequence[Union[Sequence[Union[int, float]], Dict[str, Any]]]] = None,
     target: str = "detected_change",
     confidence: float = 0.85,
     change_detected: Optional[bool] = None,

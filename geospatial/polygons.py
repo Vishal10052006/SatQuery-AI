@@ -11,7 +11,7 @@ from pyproj import CRS, Transformer
 import rasterio
 import rasterio.features
 import shapely.geometry
-from shapely.geometry import Polygon, MultiPolygon, box
+from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, box
 from shapely.ops import transform as shapely_transform
 from shapely.validation import make_valid
 
@@ -129,7 +129,7 @@ def mask_to_polygons(
 
         if isinstance(geom, (Polygon, MultiPolygon)):
             polygons.append(geom)
-        elif hasattr(geom, "geoms"):
+        elif isinstance(geom, GeometryCollection):
             # If GeometryCollection, collect all polygon components
             for sub_geom in geom.geoms:
                 if isinstance(sub_geom, (Polygon, MultiPolygon)):

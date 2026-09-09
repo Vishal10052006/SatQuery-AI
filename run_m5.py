@@ -10,7 +10,7 @@ import sys
 
 # Ensure UTF-8 output on Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
 
 from geospatial.pipeline import run_geospatial_pipeline
 from geospatial.integration import process_m2_m3_result
@@ -76,13 +76,23 @@ def main():
 
         geotiff = m2_data.get("reference_image") or m2_data.get("reference_geotiff")
         mask = m2_data.get("change_mask") or m2_data.get("change_mask_path")
-        target = m2_data.get("target", args.target)
-        confidence = m2_data.get("confidence", args.confidence)
+        pred_obj = m2_data.get("prediction", {})
+        target = (
+            m2_data.get("target")
+            or pred_obj.get("predicted_class_name")
+            or pred_obj.get("predicted_class")
+            or args.target
+        )
+        conf_val = m2_data.get("confidence", args.confidence)
+        if isinstance(conf_val, dict):
+            confidence = float(conf_val.get("score", pred_obj.get("model_confidence", 0.85)))
+        else:
+            confidence = float(conf_val)
 
-        print(f"\n========================================================")
-        print(f"   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
-        print(f"   (Processing Upstream M2/M3 Detection Payload)          ")
-        print(f"========================================================")
+        print("\n========================================================")
+        print("   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
+        print("   (Processing Upstream M2/M3 Detection Payload)          ")
+        print("========================================================")
         print(f"Input Payload     : {args.m2_result}")
         print(f"Reference Image   : {geotiff}")
         print(f"Change Mask       : {mask}")
@@ -99,9 +109,9 @@ def main():
         target = args.target
         confidence = args.confidence
 
-        print(f"\n========================================================")
-        print(f"   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
-        print(f"========================================================")
+        print("\n========================================================")
+        print("   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
+        print("========================================================")
         print(f"Reference GeoTIFF : {geotiff}")
         print(f"Change Mask       : {mask}")
         print(f"Target Category   : {target}")

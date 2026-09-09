@@ -5,15 +5,14 @@ Produces standardized GeoJSON feature collections and evidence.json artifacts.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-import shapely.geometry
+from typing import Any, Dict, List, Optional, Sequence, Union
 from shapely.geometry import Polygon, MultiPolygon, mapping
 
 from geospatial.area import calculate_polygon_area, calculate_total_area
 
 
 def generate_geojson(
-    polygons: Optional[List[Union[Polygon, MultiPolygon]]] = None,
+    polygons: Optional[Sequence[Union[Polygon, MultiPolygon]]] = None,
     bboxes_geo: Optional[List[Dict[str, Any]]] = None,
     target: str = "detected_change",
     confidence: float = 0.85,
@@ -103,7 +102,7 @@ def generate_evidence_json(
     change_detected: bool,
     bounding_boxes: List[Dict[str, Any]],
     geographic_coordinates: Dict[str, Any],
-    polygons: List[Union[Polygon, MultiPolygon]],
+    polygons: Sequence[Union[Polygon, MultiPolygon]],
     geojson_path: Union[str, Path],
     map_path: Union[str, Path],
     raster_metadata: Optional[Dict[str, Any]] = None,

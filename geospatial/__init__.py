@@ -14,7 +14,11 @@ from geospatial.visualization import generate_folium_map
 from geospatial.evidence import generate_geojson, generate_evidence_json
 from geospatial.pipeline import run_geospatial_pipeline
 from geospatial.schema import M2M3Payload, EvidenceOutput
-from geospatial.integration import process_m2_m3_result, process_m2_detector_output
+from geospatial.integration import (
+    process_m2_m3_result,
+    process_m2_detector_output,
+    process_m3_pipeline_payload,
+)
 from geospatial.m3_adapter import (
     export_layer_to_geotiff,
     export_all_layers_to_geotiff,
@@ -36,6 +40,7 @@ __all__ = [
     "run_geospatial_pipeline",
     "process_m2_m3_result",
     "process_m2_detector_output",
+    "process_m3_pipeline_payload",
     "M2M3Payload",
     "EvidenceOutput",
     "export_layer_to_geotiff",
