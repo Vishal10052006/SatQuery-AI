@@ -13,6 +13,8 @@ from geospatial.area import calculate_polygon_area
 from geospatial.visualization import generate_folium_map
 from geospatial.evidence import generate_geojson, generate_evidence_json
 from geospatial.pipeline import run_geospatial_pipeline
+from geospatial.schema import M2M3Payload, EvidenceOutput
+from geospatial.integration import process_m2_m3_result
 
 __all__ = [
     "read_geotiff_metadata",
@@ -25,4 +27,7 @@ __all__ = [
     "generate_geojson",
     "generate_evidence_json",
     "run_geospatial_pipeline",
+    "process_m2_m3_result",
+    "M2M3Payload",
+    "EvidenceOutput",
 ]

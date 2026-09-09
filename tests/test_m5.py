@@ -17,6 +17,8 @@ from geospatial.area import calculate_polygon_area, calculate_total_area
 from geospatial.visualization import generate_folium_map
 from geospatial.evidence import generate_geojson, generate_evidence_json
 from geospatial.pipeline import run_geospatial_pipeline
+from geospatial.schema import M2M3Payload, EvidenceOutput
+from geospatial.integration import process_m2_m3_result
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -280,3 +282,71 @@ class TestM5Geospatial:
         assert result["confidence"] == 0.94
         assert result["change_detected"] is True
         assert (out_dir / "evidence.json").exists()
+
+    def test_11_process_m2_m3_result_standard_payload(self):
+        """Verify process_m2_m3_result accepts standardized team payload."""
+        standard_payload = {
+            "target": "new building",
+            "confidence": 0.91,
+            "change_detected": True,
+            "reference_image": str(SAMPLE_GEOTIFF),
+            "change_mask": str(SAMPLE_MASK),
+            "bounding_boxes": [
+                [50, 60, 100, 110]
+            ],
+        }
+
+        out_dir = OUTPUT_TEST_DIR / "integration_standard"
+        evidence = process_m2_m3_result(standard_payload, output_dir=out_dir)
+
+        assert evidence["target"] == "new building"
+        assert evidence["confidence"] == 0.91
+        assert evidence["change_detected"] is True
+        assert len(evidence["bounding_boxes"]) == 1
+        assert len(evidence["polygons"]) == 2
+        assert evidence["area"]["total_hectares"] > 0
+
+        # Verify all 3 required artifacts are produced
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+    def test_12_process_m2_m3_result_dataclass_and_json_file(self):
+        """Verify process_m2_m3_result accepts M2M3Payload dataclass and JSON path."""
+        # 1. Test from JSON file path directly
+        out_dir_file = OUTPUT_TEST_DIR / "integration_from_json_file"
+        res_file = process_m2_m3_result(M2_RESULT_JSON, output_dir=out_dir_file)
+        assert res_file["target"] == "deforestation"
+        assert (out_dir_file / "evidence.json").exists()
+
+        # 2. Test from dataclass instance
+        payload_obj = M2M3Payload(
+            target="unauthorized construction",
+            confidence=0.88,
+            change_detected=True,
+            reference_image=str(SAMPLE_GEOTIFF),
+            change_mask=str(SAMPLE_MASK),
+            bounding_boxes=[[30, 30, 80, 80]],
+        )
+        out_dir_obj = OUTPUT_TEST_DIR / "integration_dataclass"
+        res_obj = process_m2_m3_result(payload_obj, output_dir=out_dir_obj)
+        assert res_obj["target"] == "unauthorized construction"
+        assert (out_dir_obj / "evidence.json").exists()
+        assert (out_dir_obj / "map.html").exists()
+
+    def test_13_process_m2_m3_result_validation(self):
+        """Verify proper error handling for invalid or missing payload data."""
+        # Missing reference image
+        with pytest.raises(ValueError):
+            process_m2_m3_result({"target": "test", "confidence": 0.9})
+
+        # Non-existent reference image file
+        with pytest.raises(FileNotFoundError):
+            process_m2_m3_result({
+                "reference_image": "non_existent_sat_image.tif",
+                "target": "test",
+            })
+
+        # Invalid type
+        with pytest.raises(TypeError):
+            process_m2_m3_result(12345)
