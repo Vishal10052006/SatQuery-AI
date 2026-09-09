@@ -13,6 +13,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from geospatial.pipeline import run_geospatial_pipeline
+from geospatial.integration import process_m2_m3_result
 from data.mock.generate_mock import create_sample_mock_data
 
 
@@ -73,11 +74,24 @@ def main():
         with open(m2_path, "r", encoding="utf-8") as f:
             m2_data = json.load(f)
 
-        geotiff = m2_data.get("reference_geotiff")
-        mask = m2_data.get("change_mask_path")
-        bboxes = m2_data.get("bounding_boxes_pixel", [])
+        geotiff = m2_data.get("reference_image") or m2_data.get("reference_geotiff")
+        mask = m2_data.get("change_mask") or m2_data.get("change_mask_path")
         target = m2_data.get("target", args.target)
         confidence = m2_data.get("confidence", args.confidence)
+
+        print(f"\n========================================================")
+        print(f"   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
+        print(f"   (Processing Upstream M2/M3 Detection Payload)          ")
+        print(f"========================================================")
+        print(f"Input Payload     : {args.m2_result}")
+        print(f"Reference Image   : {geotiff}")
+        print(f"Change Mask       : {mask}")
+        print(f"Target Category   : {target}")
+        print(f"Confidence        : {confidence:.2f}")
+        print(f"Output Directory  : {args.output}")
+        print("--------------------------------------------------------")
+
+        evidence = process_m2_m3_result(m2_path, output_dir=args.output)
     else:
         geotiff = args.geotiff or str(mock_dir / "sample.tif")
         mask = args.mask or str(mock_dir / "change_mask.npy")
@@ -85,24 +99,24 @@ def main():
         target = args.target
         confidence = args.confidence
 
-    print(f"\n========================================================")
-    print(f"   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
-    print(f"========================================================")
-    print(f"Reference GeoTIFF : {geotiff}")
-    print(f"Change Mask       : {mask}")
-    print(f"Target Category   : {target}")
-    print(f"Confidence        : {confidence:.2f}")
-    print(f"Output Directory  : {args.output}")
-    print("--------------------------------------------------------")
+        print(f"\n========================================================")
+        print(f"   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
+        print(f"========================================================")
+        print(f"Reference GeoTIFF : {geotiff}")
+        print(f"Change Mask       : {mask}")
+        print(f"Target Category   : {target}")
+        print(f"Confidence        : {confidence:.2f}")
+        print(f"Output Directory  : {args.output}")
+        print("--------------------------------------------------------")
 
-    evidence = run_geospatial_pipeline(
-        reference_geotiff=geotiff,
-        change_mask=mask,
-        bounding_boxes=bboxes,
-        target=target,
-        confidence=confidence,
-        output_dir=args.output,
-    )
+        evidence = run_geospatial_pipeline(
+            reference_geotiff=geotiff,
+            change_mask=mask,
+            bounding_boxes=bboxes,
+            target=target,
+            confidence=confidence,
+            output_dir=args.output,
+        )
 
     print("\n[SUCCESS] M5 Pipeline execution finished successfully!")
     print(f"  * Change Confirmed : {evidence['change_detected']}")
