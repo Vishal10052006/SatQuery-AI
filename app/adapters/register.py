@@ -17,6 +17,7 @@ from app.adapters.m1_vqa_adapter import build_vqa_adapter
 from app.adapters.m2_change_adapter import build_change_detection_adapter
 from app.adapters.m2_grounding_adapter import build_grounding_adapter
 from app.adapters.m3_optical_sar_adapter import build_optical_sar_adapter
+from app.adapters.m5_gis_adapter import make_m5_gis_adapter
 from app.query.registry import ToolRegistry
 from app.query.schemas import ToolName
 
@@ -28,6 +29,7 @@ def register_specialists(
     change_detection: Any | None = None,
     grounding: Any | None = None,
     optical_sar: Any | None = None,
+    gis: Any | None = None,
 ) -> ToolRegistry:
     """
     Register whichever real specialist implementations are available.
@@ -56,8 +58,10 @@ def register_specialists(
 
     Notes
     -----
-    M5 is intentionally not included yet because a confirmed
-    concrete M5 specialist interface is not currently available.
+    gis:
+        Real M5 GIS / geospatial specialist instance.
+
+    M5 is registered when a GIS specialist is supplied.
     """
 
     if vqa is not None:
@@ -82,6 +86,12 @@ def register_specialists(
         registry.register(
             ToolName.M3_OPTICAL_SAR,
             build_optical_sar_adapter(optical_sar),
+        )
+
+    if gis is not None:
+        registry.register(
+            ToolName.M5_GIS,
+            make_m5_gis_adapter(gis),
         )
 
     return registry

@@ -7,7 +7,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.adapters.common import convert_tool_output
+from app.adapters.common import (
+    convert_tool_output,
+    invoke_specialist,
+)
 from app.query.schemas import ToolName, ToolResult
 
 
@@ -55,9 +58,16 @@ def build_grounding_adapter(
             **kwargs,
         }
 
-        raw_output = specialist.execute(
+        raw_output = invoke_specialist(
+            specialist,
             image_paths=image_paths,
             params=params,
+            fallback_kwargs={
+                "images": images,
+                "previous_result": previous_result,
+                "target": target,
+                **kwargs,
+            },
         )
 
         return convert_tool_output(

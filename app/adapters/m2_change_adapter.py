@@ -7,7 +7,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.adapters.common import convert_tool_output
+from app.adapters.common import (
+    convert_tool_output,
+    invoke_specialist,
+)
 from app.query.schemas import ToolName, ToolResult
 
 
@@ -39,12 +42,20 @@ def build_change_detection_adapter(
             **kwargs,
         }
 
-        raw_output = specialist.execute(
+        raw_output = invoke_specialist(
+            specialist,
             image_paths=[
                 Path(before),
                 Path(after),
             ],
             params=params,
+            fallback_kwargs={
+                "before": before,
+                "after": after,
+                "target": target,
+                "temporal": temporal,
+                **kwargs,
+            },
         )
 
         return convert_tool_output(

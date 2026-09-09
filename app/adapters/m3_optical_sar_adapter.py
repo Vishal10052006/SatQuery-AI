@@ -7,7 +7,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.adapters.common import convert_tool_output
+from app.adapters.common import (
+    convert_tool_output,
+    invoke_specialist,
+)
 from app.query.schemas import ToolName, ToolResult
 
 
@@ -37,12 +40,19 @@ def build_optical_sar_adapter(
             **kwargs,
         }
 
-        raw_output = specialist.execute(
+        raw_output = invoke_specialist(
+            specialist,
             image_paths=[
                 Path(optical),
                 Path(sar),
             ],
             params=params,
+            fallback_kwargs={
+                "optical": optical,
+                "sar": sar,
+                "target": target,
+                **kwargs,
+            },
         )
 
         return convert_tool_output(

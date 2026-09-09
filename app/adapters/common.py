@@ -105,3 +105,45 @@ def convert_tool_output(
         data=data,
         evidence=evidence,
     )
+
+
+def invoke_specialist(
+    specialist: Any,
+    *,
+    image_paths: list[Any] | None = None,
+    params: dict[str, Any] | None = None,
+    fallback_kwargs: dict[str, Any] | None = None,
+) -> Any:
+    """
+    Invoke an external specialist through a stable compatibility boundary.
+
+    Preferred interface:
+        specialist.execute(
+            image_paths=[...],
+            params={...},
+        )
+
+    Compatibility interface:
+        specialist(**fallback_kwargs)
+
+    This allows M4 to integrate both the structured specialist
+    classes supplied by teammates and lightweight callable
+    implementations used during testing/integration.
+    """
+
+    if hasattr(specialist, "execute") and callable(
+        specialist.execute
+    ):
+        return specialist.execute(
+            image_paths=image_paths or [],
+            params=params or {},
+        )
+
+    if callable(specialist):
+        return specialist(
+            **(fallback_kwargs or {}),
+        )
+
+    raise TypeError(
+        "Specialist must expose execute() or be callable."
+    )
