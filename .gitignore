@@ -1,0 +1,19 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest / Cache
+.pytest_cache/
+
+# Large satellite rasters (keep .gitkeep)
+data/optical/*.tif
+data/sar/*.tif
+data/results/
+!data/optical/.gitkeep
+!data/sar/.gitkeep
+
+# Environment
+.venv/
+venv/
+*.egg-info/
