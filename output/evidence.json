@@ -230,6 +230,7 @@
       }
     ]
   },
+  "evidence_path": "output/evidence.json",
   "geojson_path": "output/evidence.geojson",
   "map_path": "output/map.html",
   "raster_metadata": {

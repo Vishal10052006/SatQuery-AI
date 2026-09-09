@@ -219,6 +219,7 @@ class TestM5Geospatial:
         assert "total_hectares" in evidence["area"]
         assert evidence["geojson_path"] == "output/evidence.geojson"
         assert evidence["map_path"] == "output/map.html"
+        assert evidence["evidence_path"] == str(Path(evidence_path).as_posix())
 
         assert evidence_path.exists()
 

@@ -17,7 +17,7 @@
             <meta name="viewport" content="width=device-width,
                 initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             <style>
-                #map_1b138749c34eb43a96fe5446b1812d09 {
+                #map_f1167648f1f43137a8bfcfac202ad6cc {
                     position: relative;
                     width: 100.0%;
                     height: 100.0%;
@@ -54,14 +54,14 @@
 <body>
     
     
-            <div class="folium-map" id="map_1b138749c34eb43a96fe5446b1812d09" ></div>
+            <div class="folium-map" id="map_f1167648f1f43137a8bfcfac202ad6cc" ></div>
         
 </body>
 <script>
     
     
-            var map_1b138749c34eb43a96fe5446b1812d09 = L.map(
-                "map_1b138749c34eb43a96fe5446b1812d09",
+            var map_f1167648f1f43137a8bfcfac202ad6cc = L.map(
+                "map_f1167648f1f43137a8bfcfac202ad6cc",
                 {
                     center: [27.999418646153764, 77.04604917555555],
                     crs: L.CRS.EPSG3857,
@@ -73,13 +73,13 @@
 
                 }
             );
-            L.control.scale().addTo(map_1b138749c34eb43a96fe5446b1812d09);
+            L.control.scale().addTo(map_f1167648f1f43137a8bfcfac202ad6cc);
 
             
 
         
     
-            var tile_layer_771752da4f1a8d0ea6248935b21f3281 = L.tileLayer(
+            var tile_layer_ff441c04a26e7459f311bf09cbce1713 = L.tileLayer(
                 "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
                 {
   "minZoom": 0,
@@ -96,10 +96,10 @@
             );
         
     
-            tile_layer_771752da4f1a8d0ea6248935b21f3281.addTo(map_1b138749c34eb43a96fe5446b1812d09);
+            tile_layer_ff441c04a26e7459f311bf09cbce1713.addTo(map_f1167648f1f43137a8bfcfac202ad6cc);
         
     
-            var tile_layer_8b63e3a3779ff9626988a53a57dada78 = L.tileLayer(
+            var tile_layer_c0d1aad0a758e562c83e901b2f00f339 = L.tileLayer(
                 "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                 {
   "minZoom": 0,
@@ -116,61 +116,61 @@
             );
         
     
-            tile_layer_8b63e3a3779ff9626988a53a57dada78.addTo(map_1b138749c34eb43a96fe5446b1812d09);
+            tile_layer_c0d1aad0a758e562c83e901b2f00f339.addTo(map_f1167648f1f43137a8bfcfac202ad6cc);
         
     
-            var feature_group_550e9a8de23890015b83498cb1578a0d = L.featureGroup(
+            var feature_group_55ab5342424311514972bac0b71439e4 = L.featureGroup(
                 {
 }
             );
         
     
-        function geo_json_318aa4c327e2b01822ef17bd693f2216_styler(feature) {
+        function geo_json_3c05deb36675c1d7927d242f5fbe6dfe_styler(feature) {
             switch(feature.properties.id) {
                 default:
                     return {"color": "#cf1322", "fillColor": "#ff4d4f", "fillOpacity": 0.45, "weight": 3};
             }
         }
-        function geo_json_318aa4c327e2b01822ef17bd693f2216_highlighter(feature) {
+        function geo_json_3c05deb36675c1d7927d242f5fbe6dfe_highlighter(feature) {
             switch(feature.properties.id) {
                 default:
                     return {"color": "#a8071a", "fillColor": "#ff7875", "fillOpacity": 0.7, "weight": 4};
             }
         }
 
-        function geo_json_318aa4c327e2b01822ef17bd693f2216_onEachFeature(feature, layer) {
+        function geo_json_3c05deb36675c1d7927d242f5fbe6dfe_onEachFeature(feature, layer) {
 
             layer.on({
                 mouseout: function(e) {
                     if(typeof e.target.setStyle === "function"){
-                            geo_json_318aa4c327e2b01822ef17bd693f2216.resetStyle(e.target);
+                            geo_json_3c05deb36675c1d7927d242f5fbe6dfe.resetStyle(e.target);
                     }
                 },
                 mouseover: function(e) {
                     if(typeof e.target.setStyle === "function"){
-                        const highlightStyle = geo_json_318aa4c327e2b01822ef17bd693f2216_highlighter(e.target.feature)
+                        const highlightStyle = geo_json_3c05deb36675c1d7927d242f5fbe6dfe_highlighter(e.target.feature)
                         e.target.setStyle(highlightStyle);
                     }
                 },
             });
         };
-        var geo_json_318aa4c327e2b01822ef17bd693f2216 = L.geoJson(null, {
-                onEachFeature: geo_json_318aa4c327e2b01822ef17bd693f2216_onEachFeature,
+        var geo_json_3c05deb36675c1d7927d242f5fbe6dfe = L.geoJson(null, {
+                onEachFeature: geo_json_3c05deb36675c1d7927d242f5fbe6dfe_onEachFeature,
             
-                style: geo_json_318aa4c327e2b01822ef17bd693f2216_styler,
+                style: geo_json_3c05deb36675c1d7927d242f5fbe6dfe_styler,
             ...{
 }
         });
 
-        function geo_json_318aa4c327e2b01822ef17bd693f2216_add (data) {
-            geo_json_318aa4c327e2b01822ef17bd693f2216
+        function geo_json_3c05deb36675c1d7927d242f5fbe6dfe_add (data) {
+            geo_json_3c05deb36675c1d7927d242f5fbe6dfe
                 .addData(data);
         }
-            geo_json_318aa4c327e2b01822ef17bd693f2216_add({"features": [{"geometry": {"coordinates": [[[77.03805407777647, 28.00562921909829], [77.03796916335133, 28.001118439302754], [77.04305128107134, 28.001042986068043], [77.04313640689033, 28.005553751598868], [77.03805407777647, 28.00562921909829]]], "type": "Polygon"}, "properties": {"area_hectares": 24.9952, "area_sq_meters": 249951.54, "confidence": 0.95, "id": 1, "target": "deforestation"}, "type": "Feature"}], "type": "FeatureCollection"});
+            geo_json_3c05deb36675c1d7927d242f5fbe6dfe_add({"features": [{"geometry": {"coordinates": [[[77.03805407777647, 28.00562921909829], [77.03796916335133, 28.001118439302754], [77.04305128107134, 28.001042986068043], [77.04313640689033, 28.005553751598868], [77.03805407777647, 28.00562921909829]]], "type": "Polygon"}, "properties": {"area_hectares": 24.9952, "area_sq_meters": 249951.54, "confidence": 0.95, "id": 1, "target": "deforestation"}, "type": "Feature"}], "type": "FeatureCollection"});
 
         
     
-            geo_json_318aa4c327e2b01822ef17bd693f2216.bindTooltip(
+            geo_json_3c05deb36675c1d7927d242f5fbe6dfe.bindTooltip(
                 `<div>
                      <b>DEFORESTATION</b> | Area: 24.995 ha (249,952 m²)
                  </div>`,
@@ -180,72 +180,72 @@
             );
         
     
-        var popup_2c65a91412db1ac1febc8d2f950acf98 = L.popup({
+        var popup_b4f08f71a45f7b80b40cdde1c0b384db = L.popup({
   "maxWidth": 320,
 });
 
         
             
-                var html_95dcc03e40e39fa7552cd1f41c45bb3a = $(`<div id="html_95dcc03e40e39fa7552cd1f41c45bb3a" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 200px; font-size: 13px;">             <h4 style="margin: 0 0 8px; color: #d9534f; border-bottom: 2px solid #d9534f; padding-bottom: 4px;">                 Detected Change #1             </h4>             <table style="width: 100%; border-collapse: collapse;">                 <tr><td><b>Target:</b></td><td><span style="background: #fdf7e7; color: #b7791f; padding: 2px 6px; border-radius: 4px; font-weight: bold;">deforestation</span></td></tr>                 <tr><td><b>Confidence:</b></td><td>95.0%</td></tr>                 <tr><td><b>Area (m²):</b></td><td><b>249,951.5 m²</b></td></tr>                 <tr><td><b>Area (ha):</b></td><td><b>24.9952 ha</b></td></tr>                 <tr><td><b>Centroid:</b></td><td>28.003336°N, 77.040553°E</td></tr>             </table>         </div>         </div>`)[0];
-                popup_2c65a91412db1ac1febc8d2f950acf98.setContent(html_95dcc03e40e39fa7552cd1f41c45bb3a);
+                var html_6a8f64c3a87ba4b9e571e14bf95b8d08 = $(`<div id="html_6a8f64c3a87ba4b9e571e14bf95b8d08" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 200px; font-size: 13px;">             <h4 style="margin: 0 0 8px; color: #d9534f; border-bottom: 2px solid #d9534f; padding-bottom: 4px;">                 Detected Change #1             </h4>             <table style="width: 100%; border-collapse: collapse;">                 <tr><td><b>Target:</b></td><td><span style="background: #fdf7e7; color: #b7791f; padding: 2px 6px; border-radius: 4px; font-weight: bold;">deforestation</span></td></tr>                 <tr><td><b>Confidence:</b></td><td>95.0%</td></tr>                 <tr><td><b>Area (m²):</b></td><td><b>249,951.5 m²</b></td></tr>                 <tr><td><b>Area (ha):</b></td><td><b>24.9952 ha</b></td></tr>                 <tr><td><b>Centroid:</b></td><td>28.003336°N, 77.040553°E</td></tr>             </table>         </div>         </div>`)[0];
+                popup_b4f08f71a45f7b80b40cdde1c0b384db.setContent(html_6a8f64c3a87ba4b9e571e14bf95b8d08);
             
         
 
-        geo_json_318aa4c327e2b01822ef17bd693f2216.bindPopup(popup_2c65a91412db1ac1febc8d2f950acf98)
+        geo_json_3c05deb36675c1d7927d242f5fbe6dfe.bindPopup(popup_b4f08f71a45f7b80b40cdde1c0b384db)
         ;
 
         
     
     
-            geo_json_318aa4c327e2b01822ef17bd693f2216.addTo(feature_group_550e9a8de23890015b83498cb1578a0d);
+            geo_json_3c05deb36675c1d7927d242f5fbe6dfe.addTo(feature_group_55ab5342424311514972bac0b71439e4);
         
     
-        function geo_json_e310160651e424f8a5797dd4b20987e2_styler(feature) {
+        function geo_json_559aa42d6b5414092b01884affba5864_styler(feature) {
             switch(feature.properties.id) {
                 default:
                     return {"color": "#cf1322", "fillColor": "#ff4d4f", "fillOpacity": 0.45, "weight": 3};
             }
         }
-        function geo_json_e310160651e424f8a5797dd4b20987e2_highlighter(feature) {
+        function geo_json_559aa42d6b5414092b01884affba5864_highlighter(feature) {
             switch(feature.properties.id) {
                 default:
                     return {"color": "#a8071a", "fillColor": "#ff7875", "fillOpacity": 0.7, "weight": 4};
             }
         }
 
-        function geo_json_e310160651e424f8a5797dd4b20987e2_onEachFeature(feature, layer) {
+        function geo_json_559aa42d6b5414092b01884affba5864_onEachFeature(feature, layer) {
 
             layer.on({
                 mouseout: function(e) {
                     if(typeof e.target.setStyle === "function"){
-                            geo_json_e310160651e424f8a5797dd4b20987e2.resetStyle(e.target);
+                            geo_json_559aa42d6b5414092b01884affba5864.resetStyle(e.target);
                     }
                 },
                 mouseover: function(e) {
                     if(typeof e.target.setStyle === "function"){
-                        const highlightStyle = geo_json_e310160651e424f8a5797dd4b20987e2_highlighter(e.target.feature)
+                        const highlightStyle = geo_json_559aa42d6b5414092b01884affba5864_highlighter(e.target.feature)
                         e.target.setStyle(highlightStyle);
                     }
                 },
             });
         };
-        var geo_json_e310160651e424f8a5797dd4b20987e2 = L.geoJson(null, {
-                onEachFeature: geo_json_e310160651e424f8a5797dd4b20987e2_onEachFeature,
+        var geo_json_559aa42d6b5414092b01884affba5864 = L.geoJson(null, {
+                onEachFeature: geo_json_559aa42d6b5414092b01884affba5864_onEachFeature,
             
-                style: geo_json_e310160651e424f8a5797dd4b20987e2_styler,
+                style: geo_json_559aa42d6b5414092b01884affba5864_styler,
             ...{
 }
         });
 
-        function geo_json_e310160651e424f8a5797dd4b20987e2_add (data) {
-            geo_json_e310160651e424f8a5797dd4b20987e2
+        function geo_json_559aa42d6b5414092b01884affba5864_add (data) {
+            geo_json_559aa42d6b5414092b01884affba5864
                 .addData(data);
         }
-            geo_json_e310160651e424f8a5797dd4b20987e2_add({"features": [{"geometry": {"coordinates": [[[77.04803100050552, 27.99555443947375], [77.04798835114583, 27.99329906073859], [77.05408641162535, 27.993208073209242], [77.05412918775977, 27.99546344334227], [77.04803100050552, 27.99555443947375]]], "type": "Polygon"}, "properties": {"area_hectares": 14.9969, "area_sq_meters": 149969.36, "confidence": 0.95, "id": 2, "target": "deforestation"}, "type": "Feature"}], "type": "FeatureCollection"});
+            geo_json_559aa42d6b5414092b01884affba5864_add({"features": [{"geometry": {"coordinates": [[[77.04803100050552, 27.99555443947375], [77.04798835114583, 27.99329906073859], [77.05408641162535, 27.993208073209242], [77.05412918775977, 27.99546344334227], [77.04803100050552, 27.99555443947375]]], "type": "Polygon"}, "properties": {"area_hectares": 14.9969, "area_sq_meters": 149969.36, "confidence": 0.95, "id": 2, "target": "deforestation"}, "type": "Feature"}], "type": "FeatureCollection"});
 
         
     
-            geo_json_e310160651e424f8a5797dd4b20987e2.bindTooltip(
+            geo_json_559aa42d6b5414092b01884affba5864.bindTooltip(
                 `<div>
                      <b>DEFORESTATION</b> | Area: 14.997 ha (149,969 m²)
                  </div>`,
@@ -255,59 +255,59 @@
             );
         
     
-        var popup_e26a4594abe318ced4a4e27f3b7b2a1e = L.popup({
+        var popup_74a8c1575fa78387866dfaf079d2ec90 = L.popup({
   "maxWidth": 320,
 });
 
         
             
-                var html_9e20194aabf8fa6a095952740f6831b3 = $(`<div id="html_9e20194aabf8fa6a095952740f6831b3" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 200px; font-size: 13px;">             <h4 style="margin: 0 0 8px; color: #d9534f; border-bottom: 2px solid #d9534f; padding-bottom: 4px;">                 Detected Change #2             </h4>             <table style="width: 100%; border-collapse: collapse;">                 <tr><td><b>Target:</b></td><td><span style="background: #fdf7e7; color: #b7791f; padding: 2px 6px; border-radius: 4px; font-weight: bold;">deforestation</span></td></tr>                 <tr><td><b>Confidence:</b></td><td>95.0%</td></tr>                 <tr><td><b>Area (m²):</b></td><td><b>149,969.4 m²</b></td></tr>                 <tr><td><b>Area (ha):</b></td><td><b>14.9969 ha</b></td></tr>                 <tr><td><b>Centroid:</b></td><td>27.994381°N, 77.051059°E</td></tr>             </table>         </div>         </div>`)[0];
-                popup_e26a4594abe318ced4a4e27f3b7b2a1e.setContent(html_9e20194aabf8fa6a095952740f6831b3);
+                var html_210fc9a6f7ac4bc34bef7c30f972ff32 = $(`<div id="html_210fc9a6f7ac4bc34bef7c30f972ff32" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 200px; font-size: 13px;">             <h4 style="margin: 0 0 8px; color: #d9534f; border-bottom: 2px solid #d9534f; padding-bottom: 4px;">                 Detected Change #2             </h4>             <table style="width: 100%; border-collapse: collapse;">                 <tr><td><b>Target:</b></td><td><span style="background: #fdf7e7; color: #b7791f; padding: 2px 6px; border-radius: 4px; font-weight: bold;">deforestation</span></td></tr>                 <tr><td><b>Confidence:</b></td><td>95.0%</td></tr>                 <tr><td><b>Area (m²):</b></td><td><b>149,969.4 m²</b></td></tr>                 <tr><td><b>Area (ha):</b></td><td><b>14.9969 ha</b></td></tr>                 <tr><td><b>Centroid:</b></td><td>27.994381°N, 77.051059°E</td></tr>             </table>         </div>         </div>`)[0];
+                popup_74a8c1575fa78387866dfaf079d2ec90.setContent(html_210fc9a6f7ac4bc34bef7c30f972ff32);
             
         
 
-        geo_json_e310160651e424f8a5797dd4b20987e2.bindPopup(popup_e26a4594abe318ced4a4e27f3b7b2a1e)
+        geo_json_559aa42d6b5414092b01884affba5864.bindPopup(popup_74a8c1575fa78387866dfaf079d2ec90)
         ;
 
         
     
     
-            geo_json_e310160651e424f8a5797dd4b20987e2.addTo(feature_group_550e9a8de23890015b83498cb1578a0d);
+            geo_json_559aa42d6b5414092b01884affba5864.addTo(feature_group_55ab5342424311514972bac0b71439e4);
         
     
-            feature_group_550e9a8de23890015b83498cb1578a0d.addTo(map_1b138749c34eb43a96fe5446b1812d09);
+            feature_group_55ab5342424311514972bac0b71439e4.addTo(map_f1167648f1f43137a8bfcfac202ad6cc);
         
     
-            var feature_group_e3f5adaf1cec62a9e921d0c114671209 = L.featureGroup(
+            var feature_group_77d32cd2df6a62df26684039dea5a761 = L.featureGroup(
                 {
 }
             );
         
     
-            var polygon_2cc5856292cf2cc9970f8e62c6ec060c = L.polygon(
+            var polygon_3e90043d817d248b71da3581e5f04298 = L.polygon(
                 [[28.00562921909829, 77.03805407777647], [28.005553751598868, 77.04313640689033], [28.001042986068043, 77.04305128107134], [28.001118439302754, 77.03796916335133], [28.00562921909829, 77.03805407777647]],
                 {"bubblingMouseEvents": true, "color": "#1890ff", "dashArray": "6, 6", "dashOffset": null, "fill": true, "fillColor": "#1890ff", "fillOpacity": 0.15, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 1.0, "smoothFactor": 1.0, "stroke": true, "weight": 2}
-            ).addTo(feature_group_e3f5adaf1cec62a9e921d0c114671209);
+            ).addTo(feature_group_77d32cd2df6a62df26684039dea5a761);
         
     
-        var popup_eaf42847a35cefc67d7cc5138696d4bf = L.popup({
+        var popup_cec5a35db4b434c68c8b67b3deb262aa = L.popup({
   "maxWidth": 280,
 });
 
         
             
-                var html_453beec6f31272e1c049c5e8728408c6 = $(`<div id="html_453beec6f31272e1c049c5e8728408c6" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 180px; font-size: 13px;">             <h4 style="margin: 0 0 6px; color: #1890ff;">Bounding Box #1</h4>             <p style="margin: 3px 0;"><b>Target:</b> deforestation</p>             <p style="margin: 3px 0;"><b>Center:</b> 28.003336°N, 77.040553°E</p>             <p style="margin: 3px 0;"><b>Bounds:</b> [77.0380, 28.0010, 77.0431, 28.0056]</p>         </div>         </div>`)[0];
-                popup_eaf42847a35cefc67d7cc5138696d4bf.setContent(html_453beec6f31272e1c049c5e8728408c6);
+                var html_a7450fbebcef9798c8b4110d166334ee = $(`<div id="html_a7450fbebcef9798c8b4110d166334ee" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 180px; font-size: 13px;">             <h4 style="margin: 0 0 6px; color: #1890ff;">Bounding Box #1</h4>             <p style="margin: 3px 0;"><b>Target:</b> deforestation</p>             <p style="margin: 3px 0;"><b>Center:</b> 28.003336°N, 77.040553°E</p>             <p style="margin: 3px 0;"><b>Bounds:</b> [77.0380, 28.0010, 77.0431, 28.0056]</p>         </div>         </div>`)[0];
+                popup_cec5a35db4b434c68c8b67b3deb262aa.setContent(html_a7450fbebcef9798c8b4110d166334ee);
             
         
 
-        polygon_2cc5856292cf2cc9970f8e62c6ec060c.bindPopup(popup_eaf42847a35cefc67d7cc5138696d4bf)
+        polygon_3e90043d817d248b71da3581e5f04298.bindPopup(popup_cec5a35db4b434c68c8b67b3deb262aa)
         ;
 
         
     
     
-            polygon_2cc5856292cf2cc9970f8e62c6ec060c.bindTooltip(
+            polygon_3e90043d817d248b71da3581e5f04298.bindTooltip(
                 `<div>
                      BBox #1 (deforestation)
                  </div>`,
@@ -317,13 +317,13 @@
             );
         
     
-            var circle_marker_dbadad8340ef9962d0dad8eb9acd333d = L.circleMarker(
+            var circle_marker_46d6ebac288760d585889192869ece89 = L.circleMarker(
                 [28.003336102583166, 77.04055278512084],
                 {"bubblingMouseEvents": true, "color": "#1890ff", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#ffffff", "fillOpacity": 1.0, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 5, "stroke": true, "weight": 3}
-            ).addTo(feature_group_e3f5adaf1cec62a9e921d0c114671209);
+            ).addTo(feature_group_77d32cd2df6a62df26684039dea5a761);
         
     
-            circle_marker_dbadad8340ef9962d0dad8eb9acd333d.bindTooltip(
+            circle_marker_46d6ebac288760d585889192869ece89.bindTooltip(
                 `<div>
                      Centroid #1: 28.00334°N, 77.04055°E
                  </div>`,
@@ -333,30 +333,30 @@
             );
         
     
-            var polygon_98010758e7d8b240ff3ce17b9ad9edaf = L.polygon(
+            var polygon_d7d9273a6a72ce9d1959c4df38be4ed4 = L.polygon(
                 [[27.99555443947375, 77.04803100050552], [27.99546344334227, 77.05412918775977], [27.993208073209242, 77.05408641162535], [27.99329906073859, 77.04798835114583], [27.99555443947375, 77.04803100050552]],
                 {"bubblingMouseEvents": true, "color": "#1890ff", "dashArray": "6, 6", "dashOffset": null, "fill": true, "fillColor": "#1890ff", "fillOpacity": 0.15, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 1.0, "smoothFactor": 1.0, "stroke": true, "weight": 2}
-            ).addTo(feature_group_e3f5adaf1cec62a9e921d0c114671209);
+            ).addTo(feature_group_77d32cd2df6a62df26684039dea5a761);
         
     
-        var popup_396bd5c4e55376a57a4ba108e29ddafd = L.popup({
+        var popup_b300eab085fc736158f4d1ed406ebecc = L.popup({
   "maxWidth": 280,
 });
 
         
             
-                var html_e653e1263cfbc9a723967c9e2bcd3d34 = $(`<div id="html_e653e1263cfbc9a723967c9e2bcd3d34" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 180px; font-size: 13px;">             <h4 style="margin: 0 0 6px; color: #1890ff;">Bounding Box #2</h4>             <p style="margin: 3px 0;"><b>Target:</b> deforestation</p>             <p style="margin: 3px 0;"><b>Center:</b> 27.994381°N, 77.051059°E</p>             <p style="margin: 3px 0;"><b>Bounds:</b> [77.0480, 27.9932, 77.0541, 27.9956]</p>         </div>         </div>`)[0];
-                popup_396bd5c4e55376a57a4ba108e29ddafd.setContent(html_e653e1263cfbc9a723967c9e2bcd3d34);
+                var html_4e303bd4f5bca8adfa4176127304572e = $(`<div id="html_4e303bd4f5bca8adfa4176127304572e" style="width: 100.0%; height: 100.0%;">         <div style="font-family: Arial, sans-serif; min-width: 180px; font-size: 13px;">             <h4 style="margin: 0 0 6px; color: #1890ff;">Bounding Box #2</h4>             <p style="margin: 3px 0;"><b>Target:</b> deforestation</p>             <p style="margin: 3px 0;"><b>Center:</b> 27.994381°N, 77.051059°E</p>             <p style="margin: 3px 0;"><b>Bounds:</b> [77.0480, 27.9932, 77.0541, 27.9956]</p>         </div>         </div>`)[0];
+                popup_b300eab085fc736158f4d1ed406ebecc.setContent(html_4e303bd4f5bca8adfa4176127304572e);
             
         
 
-        polygon_98010758e7d8b240ff3ce17b9ad9edaf.bindPopup(popup_396bd5c4e55376a57a4ba108e29ddafd)
+        polygon_d7d9273a6a72ce9d1959c4df38be4ed4.bindPopup(popup_b300eab085fc736158f4d1ed406ebecc)
         ;
 
         
     
     
-            polygon_98010758e7d8b240ff3ce17b9ad9edaf.bindTooltip(
+            polygon_d7d9273a6a72ce9d1959c4df38be4ed4.bindTooltip(
                 `<div>
                      BBox #2 (deforestation)
                  </div>`,
@@ -366,13 +366,13 @@
             );
         
     
-            var circle_marker_43a213561db8cab214a8f441752aa913 = L.circleMarker(
+            var circle_marker_d7a1c262ec309a04d0380f57b069914f = L.circleMarker(
                 [27.994381256341498, 77.0510587694528],
                 {"bubblingMouseEvents": true, "color": "#1890ff", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#ffffff", "fillOpacity": 1.0, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 5, "stroke": true, "weight": 3}
-            ).addTo(feature_group_e3f5adaf1cec62a9e921d0c114671209);
+            ).addTo(feature_group_77d32cd2df6a62df26684039dea5a761);
         
     
-            circle_marker_43a213561db8cab214a8f441752aa913.bindTooltip(
+            circle_marker_d7a1c262ec309a04d0380f57b069914f.bindTooltip(
                 `<div>
                      Centroid #2: 27.99438°N, 77.05106°E
                  </div>`,
@@ -382,32 +382,32 @@
             );
         
     
-            feature_group_e3f5adaf1cec62a9e921d0c114671209.addTo(map_1b138749c34eb43a96fe5446b1812d09);
+            feature_group_77d32cd2df6a62df26684039dea5a761.addTo(map_f1167648f1f43137a8bfcfac202ad6cc);
         
     
-            var layer_control_5c7c4276fd43f9f0e70ac768c77df5aa_layers = {
+            var layer_control_96d39b4817a9f2d408f55ae046e12afc_layers = {
                 base_layers : {
-                    "Satellite (Esri World Imagery)" : tile_layer_771752da4f1a8d0ea6248935b21f3281,
-                    "OpenStreetMap (Standard)" : tile_layer_8b63e3a3779ff9626988a53a57dada78,
+                    "Satellite (Esri World Imagery)" : tile_layer_ff441c04a26e7459f311bf09cbce1713,
+                    "OpenStreetMap (Standard)" : tile_layer_c0d1aad0a758e562c83e901b2f00f339,
                 },
                 overlays :  {
-                    "Detected Regions (Polygons)" : feature_group_550e9a8de23890015b83498cb1578a0d,
-                    "Bounding Boxes" : feature_group_e3f5adaf1cec62a9e921d0c114671209,
+                    "Detected Regions (Polygons)" : feature_group_55ab5342424311514972bac0b71439e4,
+                    "Bounding Boxes" : feature_group_77d32cd2df6a62df26684039dea5a761,
                 },
             };
-            let layer_control_5c7c4276fd43f9f0e70ac768c77df5aa = L.control.layers(
-                layer_control_5c7c4276fd43f9f0e70ac768c77df5aa_layers.base_layers,
-                layer_control_5c7c4276fd43f9f0e70ac768c77df5aa_layers.overlays,
+            let layer_control_96d39b4817a9f2d408f55ae046e12afc = L.control.layers(
+                layer_control_96d39b4817a9f2d408f55ae046e12afc_layers.base_layers,
+                layer_control_96d39b4817a9f2d408f55ae046e12afc_layers.overlays,
                 {
   "position": "topright",
   "collapsed": false,
   "autoZIndex": true,
 }
-            ).addTo(map_1b138749c34eb43a96fe5446b1812d09);
+            ).addTo(map_f1167648f1f43137a8bfcfac202ad6cc);
 
         
     
-            map_1b138749c34eb43a96fe5446b1812d09.fitBounds(
+            map_f1167648f1f43137a8bfcfac202ad6cc.fitBounds(
                 [[27.993208073209242, 77.03796916335133], [28.00562921909829, 77.05412918775977]],
                 {"padding": [20, 20]}
             );

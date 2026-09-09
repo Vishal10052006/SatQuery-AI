@@ -103,8 +103,8 @@ def main():
     print(f"  * Polygons Detected: {len(evidence['polygons'])}")
     print(f"  * Total Area (m²)  : {evidence['area']['total_sq_meters']:,.1f} m²")
     print(f"  * Total Area (ha)  : {evidence['area']['total_hectares']:.4f} ha")
-    print(f"  * Evidence JSON    : {evidence['geojson_path']}")
-    print(f"  * GeoJSON Path     : {args.output}/evidence.geojson")
+    print(f"  * Evidence JSON    : {evidence.get('evidence_path', str(Path(args.output, 'evidence.json').as_posix()))}")
+    print(f"  * GeoJSON Path     : {evidence['geojson_path']}")
     print(f"  * Interactive Map  : {evidence['map_path']}\n")
 
     return evidence

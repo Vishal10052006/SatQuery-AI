@@ -230,6 +230,7 @@
       }
     ]
   },
+  "evidence_path": "C:/Users/Alok Kumar/OneDrive/Desktop/SatQuery-AI/SatQuery-AI/output/test_run/pipeline_run/evidence.json",
   "geojson_path": "C:/Users/Alok Kumar/OneDrive/Desktop/SatQuery-AI/SatQuery-AI/output/test_run/pipeline_run/evidence.geojson",
   "map_path": "C:/Users/Alok Kumar/OneDrive/Desktop/SatQuery-AI/SatQuery-AI/output/test_run/pipeline_run/map.html",
   "raster_metadata": {

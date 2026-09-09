@@ -151,6 +151,7 @@ def generate_evidence_json(
     # Normalize relative/string paths
     geojson_str = str(Path(geojson_path).as_posix()) if geojson_path else None
     map_str = str(Path(map_path).as_posix()) if map_path else None
+    evidence_str = str(Path(output_path).as_posix()) if output_path else None
 
     evidence: Dict[str, Any] = {
         "target": str(target),
@@ -160,6 +161,7 @@ def generate_evidence_json(
         "geographic_coordinates": geographic_coordinates,
         "polygons": polygon_geometries,
         "area": area_payload,
+        "evidence_path": evidence_str,
         "geojson_path": geojson_str,
         "map_path": map_str,
     }
