@@ -1,7 +1,14 @@
+# Generated output artifacts
+output/
+
+# Testing & Cache
+.pytest_cache/
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
-.pytest_cache/
+
+# Packaging & Coverage
 *.egg-info/
 dist/
 build/
