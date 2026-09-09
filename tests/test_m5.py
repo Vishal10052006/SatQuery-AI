@@ -23,6 +23,7 @@ from geospatial.m3_adapter import (
     export_layer_to_geotiff,
     export_all_layers_to_geotiff,
     process_m3_evidence_to_m5,
+    process_m3_result,
 )
 
 
@@ -489,5 +490,57 @@ class TestM5Geospatial:
         assert (out_dir / "map.html").exists()
         assert evidence["detector_metadata"]["is_m4_wrapped"] is True
         assert "Detected 2 changed region(s)" in evidence["detector_metadata"]["m4_claim"]
+
+    def test_19_process_m3_result_object_solving_9_problems(self):
+        """Verify process_m3_result ingests raw m3_result object solving all 9 integration challenges."""
+        from rasterio.transform import Affine
+
+        class MockData:
+            def __init__(self, data, transform=None):
+                self.data = data
+                self.transform = transform
+
+        class MockM3Result:
+            def __init__(self):
+                self.optical_data = MockData(
+                    data=np.random.randint(10, 200, size=(4, 64, 64), dtype=np.uint8),
+                    transform=Affine(10.0, 0.0, 700000.0, 0.0, -10.0, 3100000.0),
+                )
+                self.registered_sar_data = MockData(
+                    data=np.random.uniform(-25.0, 0.0, size=(2, 64, 64)).astype(np.float32)
+                )
+
+                class EarlyFusion:
+                    fused_data = np.random.uniform(0.0, 1.0, size=(6, 64, 64)).astype(np.float32)
+
+                self.early_fusion_result = EarlyFusion()
+                self.confidence = {"score": 0.94}
+                self.prediction = {"predicted_class": "aircraft_hangar"}
+
+            def to_gis_evidence(self):
+                return {
+                    "crs": "EPSG:32643",
+                    "bounds": [700000.0, 3097440.0, 702560.0, 3100000.0],
+                    "resolution": (10.0, 10.0),
+                    "spatial_shape": (64, 64),
+                    "registration_passed": True,
+                    "registration_score": 0.99,
+                }
+
+        mock_obj = MockM3Result()
+        out_dir = OUTPUT_TEST_DIR / "m3_raw_obj_test"
+        evidence = process_m3_result(mock_obj, output_dir=out_dir)
+
+        assert evidence["target"] == "aircraft_hangar"
+        assert evidence["confidence"] == 0.94
+        assert evidence["change_detected"] is True
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+        assert (out_dir / "layers" / "optical_multispectral.tif").exists()
+        assert (out_dir / "layers" / "sar_polarimetric.tif").exists()
+        assert (out_dir / "layers" / "fused_multimodal.tif").exists()
+        assert evidence["m3_validation"]["registration_passed"] is True
+
 
 

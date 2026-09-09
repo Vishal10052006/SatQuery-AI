@@ -20,6 +20,7 @@ from geospatial.m3_adapter import (
     export_all_layers_to_geotiff,
     extract_gis_evidence_from_m3,
     process_m3_evidence_to_m5,
+    process_m3_result,
 )
 
 __all__ = [
@@ -41,4 +42,5 @@ __all__ = [
     "export_all_layers_to_geotiff",
     "extract_gis_evidence_from_m3",
     "process_m3_evidence_to_m5",
+    "process_m3_result",
 ]

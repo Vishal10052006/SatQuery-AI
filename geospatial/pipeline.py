@@ -22,6 +22,7 @@ def run_geospatial_pipeline(
     bounding_boxes: Optional[List[Union[List[float], Dict[str, float]]]] = None,
     target: str = "detected_change",
     confidence: float = 0.85,
+    change_detected: Optional[bool] = None,
     output_dir: Union[str, Path] = "output",
 ) -> Dict[str, Any]:
     """
@@ -33,6 +34,7 @@ def run_geospatial_pipeline(
         bounding_boxes: Optional list of pixel bounding boxes [xmin, ymin, xmax, ymax].
         target: Detection target category (e.g. 'deforestation', 'vehicle', 'aircraft').
         confidence: Detection confidence score (0.0 to 1.0).
+        change_detected: Optional explicit boolean flag for whether change/target was detected.
         output_dir: Directory where GeoJSON, HTML map, and evidence.json will be saved.
 
     Returns:
@@ -64,7 +66,10 @@ def run_geospatial_pipeline(
         )
 
     # Determine change detected flag
-    change_detected = bool(len(polygons) > 0 or len(bboxes_geo) > 0)
+    if change_detected is None:
+        change_detected = bool(len(polygons) > 0 or len(bboxes_geo) > 0)
+    else:
+        change_detected = bool(change_detected)
 
     # 4. Calculate geographic coordinates summary (center, bounds, centroids)
     all_lons: List[float] = []
