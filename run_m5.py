@@ -6,6 +6,12 @@ GIS, Geospatial Processing and Evidence Generation.
 import argparse
 import json
 from pathlib import Path
+import sys
+
+# Ensure UTF-8 output on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from geospatial.pipeline import run_geospatial_pipeline
 from data.mock.generate_mock import create_sample_mock_data
 
