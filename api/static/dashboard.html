@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SatQuery AI — Mission Dashboard</title>
+  <style>
+    :root { --bg:#07111f; --panel:#0d1b2e; --panel2:#10243b; --line:#203750; --text:#e9f2fb; --muted:#91a7bd; --accent:#5eead4; --accent2:#60a5fa; --danger:#fb7185; --shadow:0 18px 50px rgba(0,0,0,.25); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:radial-gradient(circle at 80% 0%,#143252 0,#07111f 42%); }
+    button,input,textarea { font:inherit; }
+    .app { display:grid; grid-template-columns:250px 1fr; min-height:100vh; }
+    aside { border-right:1px solid var(--line); background:rgba(5,14,26,.86); padding:24px 18px; position:sticky; top:0; height:100vh; }
+    .brand { display:flex; gap:12px; align-items:center; margin-bottom:34px; }
+    .brand-mark { width:42px; height:42px; display:grid; place-items:center; border:1px solid #31516f; border-radius:12px; background:var(--panel2); font-size:21px; }
+    .brand strong { display:block; font-size:16px; } .brand span { color:var(--muted); font-size:11px; }
+    nav button { width:100%; text-align:left; border:0; background:transparent; color:var(--muted); padding:12px 13px; border-radius:9px; cursor:pointer; margin:2px 0; }
+    nav button.active,nav button:hover { color:var(--text); background:#12273e; }
+    .status { position:absolute; left:18px; right:18px; bottom:20px; border:1px solid var(--line); border-radius:10px; padding:12px; font-size:12px; color:var(--muted); }
+    .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent); margin-right:7px; }
+    main { padding:28px 32px 48px; max-width:1500px; width:100%; margin:auto; }
+    header { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-bottom:22px; }
+    h1 { margin:0 0 5px; font-size:28px; letter-spacing:-.5px; } h2 { margin:0; font-size:16px; } p { margin:0; color:var(--muted); font-size:13px; }
+    .pill { border:1px solid #2c4b66; border-radius:999px; padding:7px 11px; color:var(--accent); font-size:12px; background:#0b1d30; }
+    .mission { display:grid; grid-template-columns:1.45fr .75fr; gap:18px; margin-bottom:18px; }
+    .panel { background:rgba(13,27,46,.88); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); }
+    .panel-head { display:flex; justify-content:space-between; align-items:center; padding:17px 18px; border-bottom:1px solid var(--line); }
+    .panel-body { padding:18px; }
+    textarea { width:100%; min-height:105px; resize:vertical; color:var(--text); background:#081625; border:1px solid #28445d; border-radius:10px; padding:13px; outline:none; }
+    textarea:focus,input:focus { border-color:#4c799e; }
+    .inputs { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:13px; }
+    .drop { border:1px dashed #3b5c77; border-radius:10px; padding:13px; background:#091827; }
+    .drop label { display:block; font-size:12px; color:var(--muted); margin-bottom:8px; } input[type=file] { width:100%; color:var(--muted); font-size:11px; }
+    .actions { display:flex; gap:10px; align-items:center; margin-top:14px; }
+    .primary { border:0; border-radius:9px; padding:11px 17px; cursor:pointer; color:#06201d; background:var(--accent); font-weight:800; } .primary:disabled { opacity:.5; cursor:wait; }
+    .secondary { border:1px solid #31516f; border-radius:9px; padding:10px 14px; cursor:pointer; color:var(--text); background:#0c1c2d; }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+    .metric { padding:15px; } .metric .label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.7px; } .metric .value { margin-top:7px; font-size:23px; font-weight:750; }
+    .grid { display:grid; grid-template-columns:1.2fr .8fr; gap:18px; margin-top:18px; }
+    .visuals { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:14px; }
+    .visual { min-height:180px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#07111f; display:flex; align-items:center; justify-content:center; position:relative; }
+    .visual img { width:100%; height:100%; object-fit:cover; display:block; } .visual span { position:absolute; left:8px; top:8px; padding:4px 7px; border-radius:6px; background:rgba(0,0,0,.65); font-size:10px; }
+    .empty { color:var(--muted); font-size:11px; text-align:center; padding:25px; }
+    .trace { padding:15px 18px; } .step { display:flex; gap:11px; padding:10px 0; border-bottom:1px solid #183047; } .step:last-child { border-bottom:0; }
+    .icon { width:23px; height:23px; border-radius:50%; display:grid; place-items:center; background:#143451; color:var(--accent); font-size:11px; flex:0 0 auto; } .step strong { font-size:12px; } .step small { display:block; color:var(--muted); margin-top:2px; }
+    pre { margin:0; max-height:310px; overflow:auto; color:#b9cce0; background:#07111f; border:1px solid #193149; border-radius:9px; padding:13px; font-size:10px; line-height:1.55; }
+    .note { padding:12px 18px; color:var(--muted); font-size:11px; border-top:1px solid var(--line); }
+    @media(max-width:1050px){ .app{grid-template-columns:1fr} aside{display:none}.mission,.grid{grid-template-columns:1fr} }
+    @media(max-width:700px){ main{padding:20px 14px}.metrics{grid-template-columns:1fr 1fr}.inputs,.visuals{grid-template-columns:1fr} header{display:block}.pill{display:inline-block;margin-top:12px} }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><div class="brand-mark">🛰️</div><div><strong>SatQuery AI</strong><span>Earth Observation Intelligence</span></div></div>
+    <nav>
+      <button class="active">⌂ Mission Overview</button>
+      <button onclick="document.getElementById('mission').scrollIntoView({behavior:'smooth'})">◈ Run Analysis</button>
+      <button onclick="document.getElementById('evidence').scrollIntoView({behavior:'smooth'})">◉ Evidence</button>
+      <button onclick="document.getElementById('trace').scrollIntoView({behavior:'smooth'})">◇ Agent Trace</button>
+    </nav>
+    <div class="status"><span class="dot"></span>Local inference service ready</div>
+  </aside>
+
+  <main>
+    <header>
+      <div><h1>Mission Dashboard</h1><p>Query-driven satellite analysis • M1–M4 orchestration</p></div>
+      <div class="pill" id="runStatus">● READY</div>
+    </header>
+
+    <section class="mission" id="mission">
+      <div class="panel">
+        <div class="panel-head"><h2>Mission Request</h2><span class="pill">NATURAL LANGUAGE</span></div>
+        <div class="panel-body">
+          <textarea id="query">Find newly constructed buildings between the two images and show where the changes occurred.</textarea>
+          <div class="inputs">
+            <div class="drop"><label>BEFORE OBSERVATION</label><input id="before" type="file" accept="image/*,.tif,.tiff"></div>
+            <div class="drop"><label>AFTER OBSERVATION</label><input id="after" type="file" accept="image/*,.tif,.tiff"></div>
+          </div>
+          <div class="actions"><button class="primary" id="run">🚀 RUN MISSION</button><button class="secondary" id="sample">Load demo query</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Agent Decision</h2></div>
+        <div class="trace" id="decision"><div class="empty">Run a mission to see the selected capabilities.</div></div>
+      </div>
+    </section>
+
+    <section class="metrics">
+      <div class="panel metric"><div class="label">Changed Regions</div><div class="value" id="regions">—</div></div>
+      <div class="panel metric"><div class="label">Changed Pixels</div><div class="value" id="pixels">—</div></div>
+      <div class="panel metric"><div class="label">Change Coverage</div><div class="value" id="coverage">—</div></div>
+      <div class="panel metric"><div class="label">Confidence</div><div class="value" id="confidence">—</div></div>
+    </section>
+
+    <section class="grid" id="evidence">
+      <div class="panel">
+        <div class="panel-head"><h2>Visual Evidence</h2><span class="pill">BEFORE / AFTER / CHANGE</span></div>
+        <div class="visuals" id="visuals">
+          <div class="visual"><div class="empty">Before image will appear here.</div><span>BEFORE</span></div>
+          <div class="visual"><div class="empty">After image will appear here.</div><span>AFTER</span></div>
+          <div class="visual"><div class="empty">Detected change artifact will appear here.</div><span>CHANGE MASK</span></div>
+        </div>
+        <div class="note" id="explanation">Evidence and explanation will be generated after analysis.</div>
+      </div>
+      <div class="panel" id="trace">
+        <div class="panel-head"><h2>Execution Trace</h2><span class="pill">M4</span></div>
+        <div class="trace" id="steps"><div class="empty">Waiting for mission execution…</div></div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:18px">
+      <div class="panel-head"><h2>Raw Mission Result</h2><button class="secondary" id="copy">Copy JSON</button></div>
+      <div class="panel-body"><pre id="raw">No mission has been executed yet.</pre></div>
+    </section>
+  </main>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  let latest = null;
+  $('sample').onclick = () => { $('query').value = 'Find newly constructed buildings between the two images and show where the changes occurred.'; };
+  $('copy').onclick = async () => { if (!latest) return; await navigator.clipboard.writeText(JSON.stringify(latest,null,2)); $('copy').textContent='Copied ✓'; setTimeout(()=>$('copy').textContent='Copy JSON',1200); };
+
+  function setStatus(text) { $('runStatus').textContent = '● ' + text; }
+  function renderDecision(data) {
+    const route = data.route || {}; const plan = data.plan || [];
+    const selected = plan.length ? plan.join(' → ') : (route.selected_tool || 'none');
+    $('decision').innerHTML = `<div class="step"><div class="icon">1</div><div><strong>Intent</strong><small>${data.query_spec?.intent || 'unknown'}</small></div></div><div class="step"><div class="icon">2</div><div><strong>Selected tools</strong><small>${selected}</small></div></div><div class="step"><div class="icon">3</div><div><strong>Mission status</strong><small>${data.status || 'unknown'}</small></div></div>`;
+  }
+  function renderSteps(data) {
+    const names = ['Query understanding','M4 route + plan','Bi-temporal change analysis','Evidence aggregation','Confidence assessment'];
+    $('steps').innerHTML = names.map((n,i)=>`<div class="step"><div class="icon">✓</div><div><strong>${n}</strong><small>${i===2 ? ((data.results||[]).find(x=>x.task==='change_detection')?.model || 'change detector') : i===4 ? ((data.confidence ?? 0)*100).toFixed(0)+'% mission confidence' : 'completed'}</small></div></div>`).join('');
+  }
+  function renderVisuals(data) {
+    const change = (data.results||[]).find(x=>x.task==='change_detection') || {}; const arts = change.artifact_urls || [];
+    const before = URL.createObjectURL($('before').files[0]); const after = URL.createObjectURL($('after').files[0]);
+    $('visuals').innerHTML = `<div class="visual"><img src="${before}"><span>BEFORE</span></div><div class="visual"><img src="${after}"><span>AFTER</span></div><div class="visual">${arts[0] ? `<img src="${arts[0]}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">` : ''}<div class="empty" style="${arts[0]?'display:none':''}">No change artifact returned.</div><span>CHANGE MASK</span></div>`;
+    const ev = change.evidence || {}; $('regions').textContent = ev.region_count ?? (ev.regions?.length ?? '—'); $('pixels').textContent = ev.changed_pixels ?? '—'; $('coverage').textContent = ev.changed_fraction != null ? (ev.changed_fraction*100).toFixed(2)+'%' : '—'; $('confidence').textContent = data.confidence != null ? (data.confidence*100).toFixed(0)+'%' : '—';
+    $('explanation').textContent = change.claim || 'Analysis completed. Inspect the visual evidence and execution trace.';
+  }
+  $('run').onclick = async () => {
+    const before = $('before').files[0], after = $('after').files[0];
+    if (!before || !after) { alert('Please select both BEFORE and AFTER images.'); return; }
+    const btn = $('run'); btn.disabled=true; btn.textContent='⏳ ANALYZING…'; setStatus('RUNNING');
+    try {
+      const form = new FormData(); form.append('query',$('query').value); form.append('before',before); form.append('after',after);
+      const response = await fetch('/api/v1/change-detection',{method:'POST',body:form}); const data = await response.json();
+      latest=data; $('raw').textContent=JSON.stringify(data,null,2); renderDecision(data); renderSteps(data); renderVisuals(data); setStatus(data.status === 'complete' ? 'MISSION COMPLETE' : 'PARTIAL RESULT');
+    } catch (err) { $('raw').textContent=String(err); setStatus('ERROR'); alert('Mission failed. Check that the API is running.'); }
+    finally { btn.disabled=false; btn.textContent='🚀 RUN MISSION'; }
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SatQuery AI — Mission Workspace</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color-scheme: dark; }
+    body { margin: 0; background: #0b1020; color: #e8edf7; }
+    main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 60px; }
+    header { margin-bottom: 22px; }
+    h1 { margin: 0 0 6px; font-size: 32px; }
+    .sub { color: #9ca8bd; }
+    .card { background: #121a2d; border: 1px solid #25304a; border-radius: 16px; padding: 20px; margin-top: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    textarea, input[type=file] { width: 100%; box-sizing: border-box; }
+    textarea { min-height: 88px; margin-top: 8px; padding: 12px; border-radius: 10px; border: 1px solid #33405d; background: #0d1425; color: inherit; }
+    input[type=file] { margin-top: 8px; }
+    button { margin-top: 16px; padding: 11px 20px; border: 0; border-radius: 10px; cursor: pointer; font-weight: 700; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .status { display: inline-block; margin-left: 10px; color: #9ca8bd; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+    .metric { background: #0d1425; border-radius: 12px; padding: 14px; border: 1px solid #25304a; }
+    .metric b { display: block; font-size: 22px; margin-top: 4px; }
+    .result-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; margin-top: 16px; }
+    img { max-width: 100%; border-radius: 12px; border: 1px solid #25304a; display: block; }
+    pre { white-space: pre-wrap; overflow: auto; background: #0a0f1d; padding: 14px; border-radius: 10px; color: #cbd5e1; }
+    .hidden { display: none; }
+    .pill { display: inline-block; padding: 5px 9px; border-radius: 999px; background: #1d2942; margin: 3px; font-size: 12px; }
+    @media (max-width: 800px) { .grid, .result-grid { grid-template-columns: 1fr; } .metrics { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🛰️ SatQuery AI</h1>
+    <div class="sub">Mission Workspace · natural-language query → M4 planning → change localization → evidence</div>
+  </header>
+
+  <section class="card">
+    <label><strong>Mission query</strong></label>
+    <textarea id="query">Find newly constructed buildings between the two images and show where the changes occurred.</textarea>
+    <div class="grid" style="margin-top:16px">
+      <label>Before observation<input id="before" type="file" accept="image/*"></label>
+      <label>After observation<input id="after" type="file" accept="image/*"></label>
+    </div>
+    <button id="run">🚀 Run Mission</button><span id="status" class="status"></span>
+  </section>
+
+  <section id="summary" class="card hidden">
+    <strong>Mission summary</strong>
+    <div id="plan" style="margin-top:10px"></div>
+    <div class="metrics">
+      <div class="metric">Changed regions<b id="regions">—</b></div>
+      <div class="metric">Changed pixels<b id="pixels">—</b></div>
+      <div class="metric">Coverage<b id="coverage">—</b></div>
+      <div class="metric">Confidence<b id="confidence">—</b></div>
+    </div>
+  </section>
+
+  <section id="visual" class="card hidden">
+    <strong>Visual evidence</strong>
+    <div class="result-grid">
+      <div><img id="artifact" alt="Before, after and detected-change visualization"></div>
+      <div><pre id="claim"></pre></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <strong>Raw mission trace</strong>
+    <pre id="result">Upload two observations and run the mission.</pre>
+  </section>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  $('run').onclick = async () => {
+    const before = $('before').files[0];
+    const after = $('after').files[0];
+    if (!before || !after) { $('status').textContent = 'Select both observations.'; return; }
+
+    const form = new FormData();
+    form.append('query', $('query').value);
+    form.append('before', before);
+    form.append('after', after);
+    $('run').disabled = true;
+    $('status').textContent = 'Running M4 mission…';
+    $('summary').classList.add('hidden');
+    $('visual').classList.add('hidden');
+    $('result').textContent = 'Processing…';
+
+    try {
+      const response = await fetch('/api/v1/change-detection', { method: 'POST', body: form });
+      const data = await response.json();
+      $('result').textContent = JSON.stringify(data, null, 2);
+      if (!response.ok) throw new Error(data.detail || 'Mission failed');
+
+      $('summary').classList.remove('hidden');
+      $('plan').innerHTML = (data.plan || []).map(x => `<span class="pill">${x}</span>`).join('');
+      const change = (data.results || []).find(x => x.task === 'change_detection');
+      const evidence = change?.evidence || {};
+      $('regions').textContent = evidence.regions?.length ?? '0';
+      $('pixels').textContent = evidence.changed_pixels ?? '0';
+      $('coverage').textContent = `${Math.round((data.evidence_summary?.tool_coverage || 0) * 100)}%`;
+      $('confidence').textContent = `${Math.round((data.confidence || 0) * 100)}%`;
+      $('claim').textContent = change?.claim || 'No change-detection result.';
+
+      const artifact = change?.artifact_urls?.[0];
+      if (artifact) {
+        $('artifact').src = artifact;
+        $('visual').classList.remove('hidden');
+      }
+      $('status').textContent = data.status === 'complete' ? 'Mission complete.' : `Mission status: ${data.status}`;
+    } catch (error) {
+      $('status').textContent = error.message;
+    } finally {
+      $('run').disabled = false;
+    }
+  };
+</script>
+</body>
+</html>
