@@ -175,3 +175,109 @@ def test_executor_handles_missing_runtime_input() -> None:
     assert report.status == ExecutionStatus.FAILED
     assert len(report.results) == 1
     assert "Missing runtime input 'images'" in report.results[0].error
+
+
+def test_executor_reports_partial_after_success_then_failure() -> None:
+    """Useful results followed by failure should produce PARTIAL."""
+
+    from app.query.registry import ToolRegistry
+    from app.query.schemas import (
+        ExecutionPlan,
+        ExecutionStatus,
+        PlanStep,
+        ToolName,
+        ToolResult,
+    )
+    from app.agents.executor import AgentExecutor
+
+    registry = ToolRegistry()
+
+    def success_tool(**kwargs):
+        return ToolResult(
+            tool=ToolName.M2_CHANGE_DETECTION,
+            status=ExecutionStatus.SUCCESS,
+            confidence=0.90,
+            data={"answer": "Change detected."},
+        )
+
+    def failing_tool(**kwargs):
+        raise RuntimeError("Grounding model unavailable")
+
+    registry.register(
+        ToolName.M2_CHANGE_DETECTION,
+        success_tool,
+    )
+
+    registry.register(
+        ToolName.M2_GROUNDING,
+        failing_tool,
+    )
+
+    plan = ExecutionPlan(
+        intent="CHANGE_DETECTION",
+        steps=[
+            PlanStep(
+                step_id=1,
+                tool=ToolName.M2_CHANGE_DETECTION,
+                operation="detect_change",
+            ),
+            PlanStep(
+                step_id=2,
+                tool=ToolName.M2_GROUNDING,
+                operation="localize",
+                inputs=["previous_result"],
+            ),
+        ],
+    )
+
+    report = AgentExecutor(registry).execute(plan)
+
+    assert len(report.results) == 2
+    assert report.results[0].status == ExecutionStatus.SUCCESS
+    assert report.results[1].status == ExecutionStatus.FAILED
+    assert report.status == ExecutionStatus.PARTIAL
+
+
+def test_executor_reports_failed_when_first_tool_fails() -> None:
+    """A failure before any useful result is a complete failure."""
+
+    from app.query.registry import ToolRegistry
+    from app.query.schemas import (
+        ExecutionPlan,
+        ExecutionStatus,
+        PlanStep,
+        ToolName,
+        ToolResult,
+    )
+    from app.agents.executor import AgentExecutor
+
+    registry = ToolRegistry()
+
+    def failing_tool(**kwargs):
+        return ToolResult(
+            tool=ToolName.M2_CHANGE_DETECTION,
+            status=ExecutionStatus.FAILED,
+            confidence=0.0,
+            error="Input image unavailable",
+        )
+
+    registry.register(
+        ToolName.M2_CHANGE_DETECTION,
+        failing_tool,
+    )
+
+    plan = ExecutionPlan(
+        intent="CHANGE_DETECTION",
+        steps=[
+            PlanStep(
+                step_id=1,
+                tool=ToolName.M2_CHANGE_DETECTION,
+                operation="detect_change",
+            ),
+        ],
+    )
+
+    report = AgentExecutor(registry).execute(plan)
+
+    assert len(report.results) == 1
+    assert report.status == ExecutionStatus.FAILED

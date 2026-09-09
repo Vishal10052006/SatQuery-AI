@@ -214,3 +214,44 @@ def test_synthesizer_handles_partial_execution() -> None:
     assert response.status == ExecutionStatus.PARTIAL
     assert response.answer == "Optical analysis completed."
     assert response.confidence == 0.71
+
+
+def test_synthesizer_preserves_partial_execution() -> None:
+    """Partial execution should produce a PARTIAL AgentResponse."""
+
+    from app.agents.executor import ExecutionReport
+    from app.agents.synthesizer import ResponseSynthesizer
+    from app.query.schemas import (
+        ExecutionStatus,
+        Intent,
+        ToolName,
+        ToolResult,
+    )
+
+    results = [
+        ToolResult(
+            tool=ToolName.M2_CHANGE_DETECTION,
+            status=ExecutionStatus.SUCCESS,
+            confidence=0.90,
+            data={
+                "answer": "Changed building regions were detected."
+            },
+        ),
+        ToolResult(
+            tool=ToolName.M2_GROUNDING,
+            status=ExecutionStatus.FAILED,
+            confidence=0.0,
+            error="Grounding unavailable.",
+        ),
+    ]
+
+    response = ResponseSynthesizer().synthesize(
+        intent=Intent.CHANGE_DETECTION,
+        report=ExecutionReport(results=results),
+    )
+
+    assert response.status == ExecutionStatus.PARTIAL
+    assert response.confidence == 0.90
+    assert "Changed building regions were detected." in response.answer
+    assert response.error == "Grounding unavailable."
+    assert len(response.results) == 2

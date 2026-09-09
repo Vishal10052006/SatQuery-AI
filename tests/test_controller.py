@@ -121,3 +121,29 @@ def test_controller_handles_missing_input() -> None:
     assert response.status == ExecutionStatus.FAILED
     assert response.confidence == 0.0
     assert response.error is not None
+
+
+def test_controller_returns_response_when_parser_fails() -> None:
+    """Controller-level exceptions should become structured failures."""
+
+    from app.query.registry import ToolRegistry
+
+    class BrokenParser:
+        def parse(self, *args, **kwargs):
+            raise RuntimeError("Parser unavailable")
+
+    controller = AgentController(
+        registry=ToolRegistry(),
+        parser=BrokenParser(),
+    )
+
+    response = controller.run(
+        QueryRequest(
+            query="Describe this satellite image."
+        )
+    )
+
+    assert response.status == ExecutionStatus.FAILED
+    assert response.intent is None
+    assert response.confidence == 0.0
+    assert response.error == "Parser unavailable"

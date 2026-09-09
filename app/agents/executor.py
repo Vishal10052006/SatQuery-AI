@@ -29,10 +29,30 @@ class ExecutionReport:
         if not self.results:
             return ExecutionStatus.FAILED
 
-        if any(result.status == ExecutionStatus.FAILED for result in self.results):
+        failed = any(
+            result.status == ExecutionStatus.FAILED
+            for result in self.results
+        )
+
+        partial = any(
+            result.status == ExecutionStatus.PARTIAL
+            for result in self.results
+        )
+
+        successful = any(
+            result.status == ExecutionStatus.SUCCESS
+            for result in self.results
+        )
+
+        # A failure after useful work has already completed is
+        # a partial execution, not a total failure.
+        if failed and successful:
+            return ExecutionStatus.PARTIAL
+
+        if failed:
             return ExecutionStatus.FAILED
 
-        if any(result.status == ExecutionStatus.PARTIAL for result in self.results):
+        if partial:
             return ExecutionStatus.PARTIAL
 
         return ExecutionStatus.SUCCESS

@@ -255,7 +255,7 @@ class AgentResponse(BaseModel):
         le=1.0,
     )
 
-    intent: Intent
+    intent: Intent | None = None
 
     evidence: list[Evidence] = Field(
         default_factory=list,
