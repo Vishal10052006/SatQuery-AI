@@ -224,15 +224,14 @@ class TestM5Geospatial:
         assert evidence_path.exists()
 
     def test_09_run_geospatial_pipeline_end_to_end(self):
-        """Verify full end-to-end execution of run_geospatial_pipeline."""
-        out_dir = OUTPUT_TEST_DIR / "pipeline_run"
+        """Verify full end-to-end execution of run_geospatial_pipeline producing required output files."""
         result = run_geospatial_pipeline(
             reference_geotiff=SAMPLE_GEOTIFF,
             change_mask=SAMPLE_MASK,
             bounding_boxes=[[40, 50, 90, 100], [140, 160, 200, 185]],
             target="deforestation",
             confidence=0.95,
-            output_dir=out_dir,
+            output_dir="output",
         )
 
         assert result["change_detected"] is True
@@ -241,9 +240,26 @@ class TestM5Geospatial:
         assert len(result["polygons"]) == 2
         assert result["area"]["total_hectares"] > 0
 
-        assert (out_dir / "evidence.json").exists()
-        assert (out_dir / "evidence.geojson").exists()
-        assert (out_dir / "map.html").exists()
+        # Verify all 3 required files are generated in output/
+        evidence_json_path = Path("output/evidence.json")
+        geojson_path = Path("output/evidence.geojson")
+        map_html_path = Path("output/map.html")
+
+        assert evidence_json_path.exists(), "output/evidence.json must exist"
+        assert geojson_path.exists(), "output/evidence.geojson must exist"
+        assert map_html_path.exists(), "output/map.html must exist"
+
+        # Verify exact path strings in result payload
+        assert result["evidence_path"] == "output/evidence.json"
+        assert result["geojson_path"] == "output/evidence.geojson"
+        assert result["map_path"] == "output/map.html"
+
+        # Verify saved evidence.json contains the correct paths internally
+        with open(evidence_json_path, "r", encoding="utf-8") as f:
+            evidence_file_data = json.load(f)
+            assert evidence_file_data["evidence_path"] == "output/evidence.json"
+            assert evidence_file_data["geojson_path"] == "output/evidence.geojson"
+            assert evidence_file_data["map_path"] == "output/map.html"
 
     def test_10_pipeline_with_mock_m2_payload(self):
         """Verify pipeline consumes mock upstream M2 output correctly."""
