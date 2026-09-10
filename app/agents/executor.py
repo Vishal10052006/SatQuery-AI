@@ -87,6 +87,12 @@ class AgentExecutor:
         Execution stops immediately if a tool fails.
         """
         runtime_context = dict(context or {})
+
+        # output_dir is runtime infrastructure rather than a user-facing
+        # input. Production callers may provide an explicit directory;
+        # direct callers/tests receive the historical local default.
+        runtime_context.setdefault("output_dir", "output")
+
         results: list[ToolResult] = []
 
         for step in plan.steps:
