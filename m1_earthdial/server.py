@@ -12,7 +12,6 @@ Reference:
 import base64
 import io
 import os
-from typing import Optional
 
 import torch
 from fastapi import FastAPI, HTTPException
@@ -64,8 +63,9 @@ model = AutoModel.from_pretrained(
     trust_remote_code=True,
 ).eval()
 
+vision_config = getattr(model.config, "vision_config", None)
 image_size = getattr(model.config, "force_image_size", None) or getattr(
-    model.config.vision_config, "image_size", 448
+    vision_config, "image_size", 448
 )
 transform = transforms.Compose([
     transforms.Resize(
@@ -102,6 +102,10 @@ def analyze(request: AnalyzeRequest):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid image payload: {exc}") from exc
 
+    question = request.question.strip()
+    if len(question) < 2:
+        raise HTTPException(status_code=422, detail="Question must contain at least 2 characters.")
+
     if not torch.cuda.is_available():
         raise HTTPException(status_code=503, detail="EarthDial server requires CUDA GPU.")
 
@@ -119,7 +123,7 @@ def analyze(request: AnalyzeRequest):
             answer = model.chat(
                 tokenizer=tokenizer,
                 pixel_values=pixel_values,
-                question=request.question.strip(),
+                question=question,
                 generation_config=generation_config,
                 verbose=False,
             )
