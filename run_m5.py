@@ -13,7 +13,11 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
 
 from data.mock.generate_mock import create_sample_mock_data
-from geospatial.integration import process_m2_m3_result
+from geospatial.integration import (
+    process_m2_result,
+    process_m3_result,
+    process_m4_result,
+)
 from geospatial.pipeline import run_geospatial_pipeline
 
 
@@ -38,6 +42,18 @@ def main():
         type=str,
         default=None,
         help="Path to upstream M2 detection JSON (overrides other inputs if provided)",
+    )
+    parser.add_argument(
+        "--m3-result",
+        type=str,
+        default=None,
+        help="Path to upstream M3 multimodal (Optical + SAR) analysis JSON",
+    )
+    parser.add_argument(
+        "--m4-result",
+        type=str,
+        default=None,
+        help="Path to upstream M4 SpecialistResult JSON wrapper",
     )
     parser.add_argument(
         "--target",
@@ -67,7 +83,27 @@ def main():
         print("[*] Generating mock GeoTIFF and change mask...")
         create_sample_mock_data(mock_dir)
 
-    if args.m2_result:
+    if args.m4_result:
+        m4_path = Path(args.m4_result)
+        if not m4_path.exists():
+            raise FileNotFoundError(f"M4 result file not found: {m4_path}")
+        with open(m4_path, "r", encoding="utf-8") as f:
+            m4_data = json.load(f)
+
+        print("\n========================================================")
+        print("   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
+        print("   (Processing Upstream M4 SpecialistResult Payload)      ")
+        print("========================================================")
+        print(f"Input Payload     : {args.m4_result}")
+        print(f"Task              : {m4_data.get('task')}")
+        print(f"Model             : {m4_data.get('model')}")
+        print(f"Confidence        : {float(m4_data.get('confidence', 0.75)):.2f}")
+        print(f"Claim             : {m4_data.get('claim', '')}")
+        print(f"Output Directory  : {args.output}")
+        print("--------------------------------------------------------")
+
+        evidence = process_m4_result(m4_path, output_dir=args.output)
+    elif args.m2_result:
         m2_path = Path(args.m2_result)
         if not m2_path.exists():
             raise FileNotFoundError(f"M2 result file not found: {m2_path}")
@@ -91,17 +127,45 @@ def main():
 
         print("\n========================================================")
         print("   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
-        print("   (Processing Upstream M2/M3 Detection Payload)          ")
+        print("   (Processing Upstream M2 Detection Payload)             ")
         print("========================================================")
         print(f"Input Payload     : {args.m2_result}")
-        print(f"Reference Image   : {geotiff}")
-        print(f"Change Mask       : {mask}")
+        if geotiff:
+            print(f"Reference Image   : {geotiff}")
+        if mask:
+            print(f"Change Mask       : {mask}")
         print(f"Target Category   : {target}")
         print(f"Confidence        : {confidence:.2f}")
         print(f"Output Directory  : {args.output}")
         print("--------------------------------------------------------")
 
-        evidence = process_m2_m3_result(m2_path, output_dir=args.output)
+        evidence = process_m2_result(m2_path, output_dir=args.output)
+    elif args.m3_result:
+        m3_path = Path(args.m3_result)
+        if not m3_path.exists():
+            raise FileNotFoundError(f"M3 result file not found: {m3_path}")
+        with open(m3_path, "r", encoding="utf-8") as f:
+            m3_data = json.load(f)
+
+        pred_obj = m3_data.get("prediction", {})
+        target = pred_obj.get("predicted_class_name") or pred_obj.get("predicted_class") or "Vegetation"
+        conf_obj = m3_data.get("confidence", {})
+        confidence = float(conf_obj.get("score", pred_obj.get("model_confidence", 0.85))) if isinstance(conf_obj, dict) else float(conf_obj)
+        reg_obj = m3_data.get("registration", {})
+
+        print("\n========================================================")
+        print("   SatQuery-AI - Module 5: Geospatial Processing Engine   ")
+        print("   (Processing Upstream M3 Optical+SAR Pipeline Payload)  ")
+        print("========================================================")
+        print(f"Input Payload     : {args.m3_result}")
+        print(f"Target Category   : {target}")
+        print(f"Confidence        : {confidence:.2f}")
+        print(f"Registration Pass : {reg_obj.get('passed', False)}")
+        print(f"Registration Score: {reg_obj.get('registration_score', 0.0)}")
+        print(f"Output Directory  : {args.output}")
+        print("--------------------------------------------------------")
+
+        evidence = process_m3_result(m3_path, output_dir=args.output)
     else:
         geotiff = args.geotiff or str(mock_dir / "sample.tif")
         mask = args.mask or str(mock_dir / "change_mask.npy")
@@ -130,9 +194,13 @@ def main():
 
     print("\n[SUCCESS] M5 Pipeline execution finished successfully!")
     print(f"  * Change Confirmed : {evidence['change_detected']}")
-    print(f"  * Polygons Detected: {len(evidence['polygons'])}")
-    print(f"  * Total Area (m²)  : {evidence['area']['total_sq_meters']:,.1f} m²")
-    print(f"  * Total Area (ha)  : {evidence['area']['total_hectares']:.4f} ha")
+    poly_cnt = len(evidence["polygons"]) if evidence.get("polygons") is not None else 0
+    print(f"  * Polygons Detected: {poly_cnt}")
+    if evidence.get("area"):
+        print(f"  * Total Area (m²)  : {evidence['area']['total_sq_meters']:,.1f} m²")
+        print(f"  * Total Area (ha)  : {evidence['area']['total_hectares']:.4f} ha")
+    else:
+        print("  * Total Area       : null (non-georeferenced)")
     print(f"  * Evidence JSON    : {evidence.get('evidence_path', str(Path(args.output, 'evidence.json').as_posix()))}")
     print(f"  * GeoJSON Path     : {evidence['geojson_path']}")
     print(f"  * Interactive Map  : {evidence['map_path']}\n")

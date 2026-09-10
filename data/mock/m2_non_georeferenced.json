@@ -1,0 +1,87 @@
+{
+  "task": "change_detection",
+  "status": "success",
+  "target": "newly constructed buildings",
+  "detector": "pixel-difference-baseline",
+  "detector_type": "baseline",
+  "change_detected": true,
+  "confidence": 0.75,
+  "changed_pixels": 450,
+  "change_fraction": 0.043945,
+  "mean_difference": 0.03812,
+  "number_of_regions": 2,
+  "region_sizes": [350, 100],
+  "geospatial_reference_available": false,
+  "crs": null,
+  "transform": null,
+  "geographic_bbox": null,
+  "changed_area_sq_m": null,
+  "regions": [
+    {
+      "region_id": 1,
+      "pixel_count": 350,
+      "confidence": 0.88,
+      "target": "newly constructed buildings",
+      "area_sq_m": null,
+      "bbox_pixel": {
+        "xmin": 20,
+        "ymin": 30,
+        "xmax": 55,
+        "ymax": 65
+      },
+      "centroid_pixel": {
+        "x": 37.5,
+        "y": 47.5
+      },
+      "polygon_pixel": [
+        [20, 30],
+        [55, 30],
+        [55, 65],
+        [20, 65],
+        [20, 30]
+      ],
+      "bbox_geo": null,
+      "centroid_geo": null,
+      "polygon_geo": null
+    },
+    {
+      "region_id": 2,
+      "pixel_count": 100,
+      "confidence": 0.82,
+      "target": "newly constructed buildings",
+      "area_sq_m": null,
+      "bbox_pixel": {
+        "xmin": 120,
+        "ymin": 130,
+        "xmax": 150,
+        "ymax": 160
+      },
+      "centroid_pixel": {
+        "x": 135.0,
+        "y": 145.0
+      },
+      "polygon_pixel": [
+        [120, 130],
+        [150, 130],
+        [150, 160],
+        [120, 160],
+        [120, 130]
+      ],
+      "bbox_geo": null,
+      "centroid_geo": null,
+      "polygon_geo": null
+    }
+  ],
+  "quality": {
+    "alignment_status": "already_aligned",
+    "alignment_quality": 1.0,
+    "valid_pixel_fraction": 1.0,
+    "georeferenced": false,
+    "detector_type": "baseline",
+    "model_status": "success",
+    "num_regions": 2
+  },
+  "warnings": [
+    "Images are not georeferenced; geographic coordinates and real-world area are unavailable."
+  ]
+}

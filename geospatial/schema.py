@@ -80,13 +80,14 @@ class EvidenceOutput:
     confidence: float
     change_detected: bool
     bounding_boxes: list[dict[str, Any]]
-    geographic_coordinates: dict[str, Any]
-    polygons: list[dict[str, Any]]
-    area: dict[str, Any]
+    geographic_coordinates: dict[str, Any] | None
+    polygons: list[dict[str, Any]] | None
+    area: dict[str, Any] | None
     evidence_path: str
     geojson_path: str
     map_path: str
     raster_metadata: dict[str, Any] | None = None
+    warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EvidenceOutput":
@@ -95,14 +96,147 @@ class EvidenceOutput:
             confidence=data["confidence"],
             change_detected=data["change_detected"],
             bounding_boxes=data.get("bounding_boxes", []),
-            geographic_coordinates=data.get("geographic_coordinates", {}),
-            polygons=data.get("polygons", []),
-            area=data.get("area", {}),
+            geographic_coordinates=data.get("geographic_coordinates"),
+            polygons=data.get("polygons"),
+            area=data.get("area"),
             evidence_path=data.get("evidence_path", ""),
             geojson_path=data.get("geojson_path", ""),
             map_path=data.get("map_path", ""),
             raster_metadata=data.get("raster_metadata"),
+            warnings=data.get("warnings", []),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class M2Region:
+    """Dataclass representing an individual detected changed region in M2 output."""
+    region_id: int
+    pixel_count: int
+    confidence: float
+    target: str = "newly constructed buildings"
+    area_sq_m: float | None = None
+    bbox_pixel: dict[str, float] | None = None
+    centroid_pixel: dict[str, float] | None = None
+    polygon_pixel: list[list[float]] | None = None
+    bbox_geo: dict[str, Any] | None = None
+    centroid_geo: dict[str, float] | None = None
+    polygon_geo: list[list[float]] | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "M2Region":
+        return cls(
+            region_id=int(data.get("region_id", 0)),
+            pixel_count=int(data.get("pixel_count", 0)),
+            confidence=float(data.get("confidence", 0.0)),
+            target=str(data.get("target", "newly constructed buildings")),
+            area_sq_m=data.get("area_sq_m"),
+            bbox_pixel=data.get("bbox_pixel"),
+            centroid_pixel=data.get("centroid_pixel"),
+            polygon_pixel=data.get("polygon_pixel"),
+            bbox_geo=data.get("bbox_geo"),
+            centroid_geo=data.get("centroid_geo"),
+            polygon_geo=data.get("polygon_geo"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class M2ChangeDetectionResult:
+    """Dataclass representing the complete M2 Change Detection output."""
+    task: str = "change_detection"
+    status: str = "success"
+    target: str = "newly constructed buildings"
+    detector: str = "pixel-difference-baseline"
+    detector_type: str = "baseline"
+    change_detected: bool = True
+    confidence: float = 0.75
+    changed_pixels: int = 0
+    change_fraction: float = 0.0
+    mean_difference: float | None = None
+    number_of_regions: int = 0
+    region_sizes: list[int] | None = None
+    geospatial_reference_available: bool = True
+    crs: str | None = None
+    transform: list[float] | None = None
+    geographic_bbox: dict[str, Any] | None = None
+    changed_area_sq_m: float | None = None
+    regions: list[M2Region] = field(default_factory=list)
+    quality: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    artifacts: list[str] = field(default_factory=list)
+    composite_path: str | None = None
+    overlay_path: str | None = None
+    mask_path: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "M2ChangeDetectionResult":
+        raw_regions = data.get("regions", [])
+        regions = [
+            M2Region.from_dict(r) if isinstance(r, dict) else r
+            for r in raw_regions
+        ]
+        return cls(
+            task=str(data.get("task", "change_detection")),
+            status=str(data.get("status", "success")),
+            target=str(data.get("target", "newly constructed buildings")),
+            detector=str(data.get("detector", "pixel-difference-baseline")),
+            detector_type=str(data.get("detector_type", "baseline")),
+            change_detected=bool(data.get("change_detected", True)),
+            confidence=float(data.get("confidence", 0.75)),
+            changed_pixels=int(data.get("changed_pixels", 0)),
+            change_fraction=float(data.get("change_fraction", 0.0)),
+            mean_difference=data.get("mean_difference"),
+            number_of_regions=int(data.get("number_of_regions", len(regions))),
+            region_sizes=data.get("region_sizes"),
+            geospatial_reference_available=bool(data.get("geospatial_reference_available", False)),
+            crs=data.get("crs"),
+            transform=data.get("transform"),
+            geographic_bbox=data.get("geographic_bbox"),
+            changed_area_sq_m=data.get("changed_area_sq_m"),
+            regions=regions,
+            quality=data.get("quality", {}),
+            warnings=data.get("warnings", []),
+            artifacts=data.get("artifacts", []),
+            composite_path=data.get("composite_path"),
+            overlay_path=data.get("overlay_path"),
+            mask_path=data.get("mask_path"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class M4SpecialistResult:
+    """Dataclass representing the M4 SpecialistResult wrapper around M2 evidence."""
+    task: str = "change_detection"
+    model: str = "pixel-difference-baseline"
+    status: str = "success"
+    confidence: float = 0.75
+    claim: str = ""
+    evidence: dict[str, Any] | M2ChangeDetectionResult = field(default_factory=dict)
+    artifacts: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "M4SpecialistResult":
+        ev = data.get("evidence", {})
+        if isinstance(ev, dict) and ("regions" in ev or "changed_pixels" in ev):
+            ev = M2ChangeDetectionResult.from_dict(ev)
+        return cls(
+            task=str(data.get("task", "change_detection")),
+            model=str(data.get("model", "pixel-difference-baseline")),
+            status=str(data.get("status", "success")),
+            confidence=float(data.get("confidence", 0.75)),
+            claim=str(data.get("claim", "")),
+            evidence=ev,
+            artifacts=data.get("artifacts", []),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+

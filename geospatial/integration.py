@@ -12,10 +12,27 @@ from typing import Any
 from pyproj import CRS, Transformer
 from shapely.geometry import Polygon
 
+from geospatial.area import calculate_polygon_area
+from geospatial.coordinates import pixel_bbox_to_geo_bbox, pixel_to_geo
 from geospatial.evidence import generate_evidence_json, generate_geojson
 from geospatial.pipeline import run_geospatial_pipeline
-from geospatial.schema import M2M3Payload
+from geospatial.schema import (
+    M2ChangeDetectionResult,
+    M2M3Payload,
+    M4SpecialistResult,
+)
 from geospatial.visualization import generate_folium_map
+
+
+def _is_m4_payload(data: dict[str, Any]) -> bool:
+    """Check if dictionary matches M4 SpecialistResult wrapper format."""
+    if "mission_result" in data and isinstance(data["mission_result"], dict):
+        return True
+    if "evidence" in data and isinstance(data["evidence"], dict) and (
+        "task" in data or "model" in data or "claim" in data
+    ):
+        return True
+    return False
 
 
 def _is_m2_detector_payload(data: dict[str, Any]) -> bool:
@@ -23,11 +40,7 @@ def _is_m2_detector_payload(data: dict[str, Any]) -> bool:
     return bool(
         (data.get("task") == "change_detection")
         or ("regions" in data or "changed_pixels" in data)
-        or (
-            "evidence" in data
-            and isinstance(data["evidence"], dict)
-            and ("regions" in data["evidence"] or "changed_pixels" in data["evidence"])
-        )
+        or _is_m4_payload(data)
     )
 
 
@@ -39,23 +52,23 @@ def _is_m3_payload(data: dict[str, Any]) -> bool:
     )
 
 
-def process_m2_detector_output(
-    payload: dict[str, Any] | str | Path,
+def process_m4_result(
+    payload: dict[str, Any] | M4SpecialistResult | str | Path,
     output_dir: str | Path = "output",
 ) -> dict[str, Any]:
     """
-    Process an M2 Change Detection output payload (or M4 SpecialistResult wrapper)
-    and produce GIS-compliant GeoJSON, interactive Folium satellite map, and evidence.json.
+    Process an M4 SpecialistResult wrapper payload.
+    Extracts the inner M2 change detection evidence and passes it to the M5 processing layer.
 
     Supports:
-        1. Georeferenced M2 detector outputs (with native CRS, e.g. EPSG:32643, and polygon_geo)
-        2. Non-georeferenced M2 detector outputs (plain PNG/JPG with pixel coordinate fallback)
-        3. M4 SpecialistResult wrapper with inner 'evidence' object
+        - M4 SpecialistResult wrapper with root 'evidence' object
+        - M4 mission_result with 'results' list containing change_detection specialist results
+        - Direct M2 payload fallback
     """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load payload from file or dict
+    # 1. Parse into dictionary
     if isinstance(payload, (str, Path)):
         p_path = Path(payload)
         if p_path.is_file():
@@ -63,83 +76,216 @@ def process_m2_detector_output(
                 raw_data = json.load(f)
         else:
             raw_data = json.loads(str(payload))
+    elif isinstance(payload, M4SpecialistResult):
+        raw_data = payload.to_dict()
     elif isinstance(payload, dict):
         raw_data = payload
     else:
         raise TypeError(f"Expected dict or path to JSON, got {type(payload).__name__}")
 
-    # 2. Unwrap M4 SpecialistResult wrapper if present
-    is_m4_wrapped = False
-    m4_claim = None
-    if "evidence" in raw_data and isinstance(raw_data["evidence"], dict):
-        is_m4_wrapped = True
-        m4_claim = raw_data.get("claim")
-        detector_body = raw_data["evidence"]
-        confidence = float(raw_data.get("confidence", detector_body.get("confidence", 0.75)))
-        target = raw_data.get("target") or detector_body.get("target") or "newly constructed buildings"
-    else:
-        detector_body = raw_data
-        confidence = float(detector_body.get("confidence", 0.75))
-        target = detector_body.get("target") or "newly constructed buildings"
+    # 2. Extract M2 evidence from M4 SpecialistResult
+    m4_claim = raw_data.get("claim")
+    m4_model = raw_data.get("model")
+    m4_status = raw_data.get("status")
+    m4_artifacts = raw_data.get("artifacts", [])
 
-    change_detected = bool(detector_body.get("change_detected", True))
-    georef_available = bool(detector_body.get("geospatial_reference_available", False))
-    native_crs = detector_body.get("crs")
-    transform = detector_body.get("transform")
-    regions = detector_body.get("regions", [])
-    changed_area_sq_m = detector_body.get("changed_area_sq_m")
+    if "mission_result" in raw_data and isinstance(raw_data["mission_result"], dict):
+        results = raw_data["mission_result"].get("results", [])
+        extracted_ev = None
+        for r in results:
+            if isinstance(r, dict) and (
+                r.get("task") == "change_detection"
+                or "regions" in r.get("evidence", {})
+                or "changed_pixels" in r.get("evidence", {})
+            ):
+                extracted_ev = r.get("evidence", r)
+                m4_claim = r.get("claim", m4_claim)
+                m4_model = r.get("model", m4_model)
+                m4_status = r.get("status", m4_status)
+                m4_artifacts = r.get("artifacts", m4_artifacts)
+                break
+        if extracted_ev is None and results and isinstance(results[0], dict):
+            extracted_ev = results[0].get("evidence", results[0])
+        m2_payload = extracted_ev if extracted_ev else raw_data
+    elif "evidence" in raw_data and isinstance(raw_data["evidence"], dict):
+        m2_payload = dict(raw_data["evidence"])
+        if "target" not in m2_payload and "target" in raw_data:
+            m2_payload["target"] = raw_data["target"]
+        if "confidence" not in m2_payload and "confidence" in raw_data:
+            m2_payload["confidence"] = raw_data["confidence"]
+    else:
+        m2_payload = raw_data
+
+    # Tag M4 metadata into payload
+    m2_payload["_m4_metadata"] = {
+        "is_m4_wrapped": True,
+        "claim": m4_claim,
+        "model": m4_model,
+        "status": m4_status,
+        "artifacts": m4_artifacts,
+    }
+
+    return process_m2_result(m2_payload, output_dir=out_dir)
+
+
+def process_m2_result(
+    payload: dict[str, Any] | M2ChangeDetectionResult | M4SpecialistResult | str | Path,
+    output_dir: str | Path = "output",
+) -> dict[str, Any]:
+    """
+    Process an M2 Change Detection output payload (or M4 SpecialistResult wrapper)
+    and produce GIS-compliant GeoJSON, interactive Folium satellite map, and evidence.json.
+
+    Supports:
+        1. Georeferenced M2 detector outputs (with dynamic CRS, transform, polygon_geo, bbox_geo)
+        2. Non-georeferenced M2 detector outputs (setting geographic fields to null, adding warning)
+        3. M4 SpecialistResult wrapper (automatically unwrapped)
+        4. File-based legacy M2 inputs (delegates to run_geospatial_pipeline)
+    """
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Parse into dictionary
+    if isinstance(payload, (str, Path)):
+        p_path = Path(payload)
+        if p_path.is_file():
+            with open(p_path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+        else:
+            raw_data = json.loads(str(payload))
+    elif isinstance(payload, M4SpecialistResult):
+        return process_m4_result(payload, output_dir=out_dir)
+    elif isinstance(payload, M2ChangeDetectionResult):
+        raw_data = payload.to_dict()
+    elif isinstance(payload, dict):
+        raw_data = payload
+    else:
+        raise TypeError(f"Expected dict or path to JSON, got {type(payload).__name__}")
+
+    # Check if legacy file-based mock (with reference_geotiff/reference_image and no regions)
+    if ("reference_geotiff" in raw_data or "reference_image" in raw_data) and "regions" not in raw_data:
+        ref_img = raw_data.get("reference_image") or raw_data.get("reference_geotiff")
+        mask = raw_data.get("change_mask") or raw_data.get("change_mask_path")
+        bboxes = raw_data.get("bounding_boxes") or raw_data.get("bounding_boxes_pixel", [])
+        return run_geospatial_pipeline(
+            reference_geotiff=str(ref_img),
+            change_mask=mask,
+            bounding_boxes=bboxes,
+            target=raw_data.get("target", "deforestation"),
+            confidence=float(raw_data.get("confidence", 0.94)),
+            output_dir=out_dir,
+        )
+
+    # Check if payload is an M4 SpecialistResult wrapper
+    if _is_m4_payload(raw_data) and "_m4_metadata" not in raw_data:
+        return process_m4_result(raw_data, output_dir=out_dir)
+
+    # 2. Extract metadata
+    m4_info = raw_data.get("_m4_metadata", {})
+    is_m4_wrapped = bool(m4_info.get("is_m4_wrapped", "claim" in raw_data or "model" in raw_data))
+    m4_claim = m4_info.get("claim") or raw_data.get("claim")
+
+    target = raw_data.get("target") or "newly constructed buildings"
+    confidence = float(raw_data.get("confidence", 0.75))
+    change_detected = bool(raw_data.get("change_detected", True))
+    georef_available = bool(raw_data.get("geospatial_reference_available", False))
+    native_crs = raw_data.get("crs")
+    transform = raw_data.get("transform")
+    regions = raw_data.get("regions", [])
+    changed_area_sq_m = raw_data.get("changed_area_sq_m")
+    warnings = list(raw_data.get("warnings", []))
 
     polygons_4326: list[Polygon] = []
     bboxes_processed: list[dict[str, Any]] = []
 
-    # 3. Process regions based on georeferencing availability
+    # 3. Handle Georeferenced vs Non-Georeferenced outputs
     if georef_available and native_crs:
-        # Reproject from native CRS to standard WGS84 (EPSG:4326)
+        # Dynamic CRS transformation to EPSG:4326 (do not assume EPSG:32643)
         source_crs = CRS.from_user_input(native_crs)
         target_crs = CRS.from_user_input("EPSG:4326")
         transformer = Transformer.from_crs(source_crs, target_crs, always_xy=True)
 
-        for reg in regions:
+        for idx, reg in enumerate(regions):
+            reg_id = reg.get("region_id", idx + 1)
             reg_target = reg.get("target") or target
-            reg_confidence = float(reg.get("confidence", confidence))
+            reg_conf = float(reg.get("confidence", confidence))
+            pixel_count = reg.get("pixel_count")
+            reg_area_sq_m = reg.get("area_sq_m")
 
-            # Polygon extraction
+            # Extract pixel bbox
+            bbox_pixel_dict = reg.get("bbox_pixel")
+            if bbox_pixel_dict:
+                if isinstance(bbox_pixel_dict, dict):
+                    pixel_bbox = [
+                        float(bbox_pixel_dict.get("xmin", 0)),
+                        float(bbox_pixel_dict.get("ymin", 0)),
+                        float(bbox_pixel_dict.get("xmax", 0)),
+                        float(bbox_pixel_dict.get("ymax", 0)),
+                    ]
+                else:
+                    pixel_bbox = [float(v) for v in bbox_pixel_dict]
+            else:
+                pixel_bbox = []
+
             poly = None
             poly_geo = reg.get("polygon_geo")
+            poly_pixel = reg.get("polygon_pixel")
+
+            # Rule 8 & 10: Prefer polygon_geo when provided; validate consistent CRS
             if poly_geo and len(poly_geo) >= 3:
-                # Reproject points [x, y] in native CRS to [lon, lat] in EPSG:4326
                 pts_4326 = [list(transformer.transform(pt[0], pt[1])) for pt in poly_geo]
                 poly = Polygon(pts_4326)
                 if not poly.is_valid:
                     poly = poly.buffer(0)
+            elif poly_pixel and len(poly_pixel) >= 3 and transform:
+                # Rule 9: Convert polygon_pixel using transform and CRS
+                pts_4326 = []
+                for pt in poly_pixel:
+                    lon, lat = pixel_to_geo(pt[0], pt[1], transform, native_crs, to_crs="EPSG:4326")
+                    pts_4326.append([lon, lat])
+                poly = Polygon(pts_4326)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+            elif pixel_bbox and transform:
+                # Rule 9 fallback: Convert pixel bbox to geographic polygon
+                b_info = pixel_bbox_to_geo_bbox(pixel_bbox, transform, native_crs, to_crs="EPSG:4326")
+                poly = Polygon(b_info["polygon_coords"])
+
+            if poly is not None:
                 polygons_4326.append(poly)
 
             # Bounding box extraction
-            bbox_pixel_dict = reg.get("bbox_pixel")
-            if bbox_pixel_dict:
-                pixel_bbox = [
-                    float(bbox_pixel_dict["xmin"]),
-                    float(bbox_pixel_dict["ymin"]),
-                    float(bbox_pixel_dict["xmax"]),
-                    float(bbox_pixel_dict["ymax"]),
-                ]
-            else:
-                pixel_bbox = []
-
             bbox_geo_dict = reg.get("bbox_geo")
             if bbox_geo_dict and "top_left" in bbox_geo_dict and "bottom_right" in bbox_geo_dict:
                 tl = bbox_geo_dict["top_left"]
                 br = bbox_geo_dict["bottom_right"]
+                tr = bbox_geo_dict.get("top_right")
+                bl = bbox_geo_dict.get("bottom_left")
                 tl_lon, tl_lat = transformer.transform(tl[0], tl[1])
                 br_lon, br_lat = transformer.transform(br[0], br[1])
-                geo_bbox = [min(tl_lon, br_lon), min(tl_lat, br_lat), max(tl_lon, br_lon), max(tl_lat, br_lat)]
-                polygon_coords = [
-                    [tl_lon, tl_lat],
-                    [br_lon, tl_lat],
-                    [br_lon, br_lat],
-                    [tl_lon, br_lat],
-                    [tl_lon, tl_lat],
-                ]
+                if tr and bl:
+                    tr_lon, tr_lat = transformer.transform(tr[0], tr[1])
+                    bl_lon, bl_lat = transformer.transform(bl[0], bl[1])
+                    lons = [tl_lon, tr_lon, br_lon, bl_lon]
+                    lats = [tl_lat, tr_lat, br_lat, bl_lat]
+                    polygon_coords = [
+                        [tl_lon, tl_lat],
+                        [tr_lon, tr_lat],
+                        [br_lon, br_lat],
+                        [bl_lon, bl_lat],
+                        [tl_lon, tl_lat],
+                    ]
+                else:
+                    lons = [tl_lon, br_lon]
+                    lats = [tl_lat, br_lat]
+                    polygon_coords = [
+                        [tl_lon, tl_lat],
+                        [br_lon, tl_lat],
+                        [br_lon, br_lat],
+                        [tl_lon, br_lat],
+                        [tl_lon, tl_lat],
+                    ]
+                geo_bbox = [min(lons), min(lats), max(lons), max(lats)]
             elif poly is not None:
                 min_lon, min_lat, max_lon, max_lat = poly.bounds
                 geo_bbox = [min_lon, min_lat, max_lon, max_lat]
@@ -150,107 +296,149 @@ def process_m2_detector_output(
                     [min_lon, max_lat],
                     [min_lon, min_lat],
                 ]
+            elif pixel_bbox and transform:
+                b_info = pixel_bbox_to_geo_bbox(pixel_bbox, transform, native_crs, to_crs="EPSG:4326")
+                geo_bbox = b_info["geo_bbox"]
+                polygon_coords = b_info["polygon_coords"]
             else:
                 geo_bbox = []
                 polygon_coords = []
 
+            # Centroid
             centroid_geo = reg.get("centroid_geo")
             if centroid_geo and "x" in centroid_geo:
                 c_lon, c_lat = transformer.transform(centroid_geo["x"], centroid_geo["y"])
                 centroid = (round(c_lon, 6), round(c_lat, 6))
-            elif polygons_4326:
-                centroid = (round(polygons_4326[-1].centroid.x, 6), round(polygons_4326[-1].centroid.y, 6))
+            elif poly is not None:
+                centroid = (round(poly.centroid.x, 6), round(poly.centroid.y, 6))
             else:
                 centroid = (0.0, 0.0)
 
+            # Area calculation & validation
+            if poly is not None:
+                poly_area = calculate_polygon_area(poly, crs="EPSG:4326")
+                area_m2 = poly_area["area_sq_meters"]
+                area_ha = poly_area["area_hectares"]
+            else:
+                area_m2 = reg_area_sq_m
+                area_ha = reg_area_sq_m / 10000.0 if reg_area_sq_m else None
+
             bboxes_processed.append({
-                "region_id": reg.get("region_id"),
+                "region_id": reg_id,
                 "target": reg_target,
-                "confidence": reg_confidence,
+                "confidence": reg_conf,
+                "pixel_count": pixel_count,
                 "pixel_bbox": pixel_bbox,
                 "geo_bbox": geo_bbox,
                 "polygon_coords": polygon_coords,
                 "centroid": centroid,
+                "area_sq_m": area_m2,
+                "area_hectares": area_ha,
+                "m2_reported_area_sq_m": reg_area_sq_m,
             })
 
+        # Calculate overall bounds & center (EPSG:4326)
+        all_lons: list[float] = []
+        all_lats: list[float] = []
+        for p in polygons_4326:
+            min_lon, min_lat, max_lon, max_lat = p.bounds
+            all_lons.extend([min_lon, max_lon])
+            all_lats.extend([min_lat, max_lat])
+
+        if all_lons and all_lats:
+            overall_bounds = [min(all_lons), min(all_lats), max(all_lons), max(all_lats)]
+            center_lon = (min(all_lons) + max(all_lons)) / 2.0
+            center_lat = (min(all_lats) + max(all_lats)) / 2.0
+        else:
+            overall_bounds = [0.0, 0.0, 0.0, 0.0]
+            center_lon, center_lat = 0.0, 0.0
+
+        geo_coords_summary: dict[str, Any] | None = {
+            "center": [round(center_lat, 6), round(center_lon, 6)],
+            "overall_bounds_4326": [round(c, 6) for c in overall_bounds],
+            "polygon_centroids": [
+                [round(p.centroid.y, 6), round(p.centroid.x, 6)] for p in polygons_4326
+            ],
+            "bbox_centroids": [
+                [round(b["centroid"][1], 6), round(b["centroid"][0], 6)] for b in bboxes_processed
+            ],
+        }
+
     else:
-        # Non-georeferenced fallback (pixel space)
-        for reg in regions:
+        # CASE 2: Non-georeferenced output
+        # Rule 7: Do NOT invent lat/lon, preserve pixel coords, set geo coords & area to null, add warning
+        unref_warning = "Images are not georeferenced; geographic coordinates and real-world area are unavailable."
+        if unref_warning not in warnings:
+            warnings.append(unref_warning)
+
+        geo_coords_summary = None
+        all_lons, all_lats = [], []
+        center_lon, center_lat = 0.0, 0.0
+
+        for idx, reg in enumerate(regions):
+            reg_id = reg.get("region_id", idx + 1)
             reg_target = reg.get("target") or target
-            reg_confidence = float(reg.get("confidence", confidence))
+            reg_conf = float(reg.get("confidence", confidence))
+            pixel_count = reg.get("pixel_count")
+
             poly_pixel = reg.get("polygon_pixel")
             if poly_pixel and len(poly_pixel) >= 3:
                 poly = Polygon(poly_pixel)
                 polygons_4326.append(poly)
 
-            bbox_pixel_dict = reg.get("bbox_pixel", {})
-            pixel_bbox = [
-                float(bbox_pixel_dict.get("xmin", 0)),
-                float(bbox_pixel_dict.get("ymin", 0)),
-                float(bbox_pixel_dict.get("xmax", 0)),
-                float(bbox_pixel_dict.get("ymax", 0)),
-            ]
-            centroid_pixel = reg.get("centroid_pixel", {})
-            c_x = float(centroid_pixel.get("x", (pixel_bbox[0] + pixel_bbox[2]) / 2.0))
-            c_y = float(centroid_pixel.get("y", (pixel_bbox[1] + pixel_bbox[3]) / 2.0))
+            bbox_pixel_dict = reg.get("bbox_pixel")
+            if bbox_pixel_dict:
+                if isinstance(bbox_pixel_dict, dict):
+                    pixel_bbox = [
+                        float(bbox_pixel_dict.get("xmin", 0)),
+                        float(bbox_pixel_dict.get("ymin", 0)),
+                        float(bbox_pixel_dict.get("xmax", 0)),
+                        float(bbox_pixel_dict.get("ymax", 0)),
+                    ]
+                else:
+                    pixel_bbox = [float(v) for v in bbox_pixel_dict]
+            else:
+                pixel_bbox = []
+
+            centroid_pixel = reg.get("centroid_pixel")
+            if centroid_pixel and "x" in centroid_pixel:
+                c_px = (float(centroid_pixel["x"]), float(centroid_pixel["y"]))
+            elif pixel_bbox:
+                c_px = ((pixel_bbox[0] + pixel_bbox[2]) / 2.0, (pixel_bbox[1] + pixel_bbox[3]) / 2.0)
+            else:
+                c_px = (0.0, 0.0)
 
             bboxes_processed.append({
-                "region_id": reg.get("region_id"),
+                "region_id": reg_id,
                 "target": reg_target,
-                "confidence": reg_confidence,
+                "confidence": reg_conf,
+                "pixel_count": pixel_count,
                 "pixel_bbox": pixel_bbox,
+                "centroid_pixel": centroid_pixel,
+                "polygon_pixel": poly_pixel,
                 "geo_bbox": None,
-                "polygon_coords": poly_pixel,
-                "centroid": (c_x, c_y),
+                "polygon_coords": None,
+                "centroid": c_px,  # pixel centroid
+                "area_sq_m": None,
+                "area_hectares": None,
             })
 
-    # 4. Calculate geographic coordinates summary
-    all_lons: list[float] = []
-    all_lats: list[float] = []
-    if georef_available:
-        for poly in polygons_4326:
-            min_lon, min_lat, max_lon, max_lat = poly.bounds
-            all_lons.extend([min_lon, max_lon])
-            all_lats.extend([min_lat, max_lat])
-
-    if all_lons and all_lats:
-        overall_bounds = [min(all_lons), min(all_lats), max(all_lons), max(all_lats)]
-        center_lon = (min(all_lons) + max(all_lons)) / 2.0
-        center_lat = (min(all_lats) + max(all_lats)) / 2.0
-    else:
-        overall_bounds = [0.0, 0.0, 0.0, 0.0]
-        center_lon, center_lat = 0.0, 0.0
-
-    geo_coords_summary = {
-        "center": [round(center_lat, 6), round(center_lon, 6)] if georef_available else None,
-        "overall_bounds_4326": [round(c, 6) for c in overall_bounds] if georef_available else None,
-        "polygon_centroids": [
-            [round(poly.centroid.y, 6), round(poly.centroid.x, 6)] for poly in polygons_4326
-        ] if georef_available else [
-            [round(poly.centroid.x, 1), round(poly.centroid.y, 1)] for poly in polygons_4326
-        ],
-        "bbox_centroids": [
-            [round(b["centroid"][1], 6), round(b["centroid"][0], 6)] for b in bboxes_processed
-        ] if georef_available else [
-            list(b["centroid"]) for b in bboxes_processed
-        ],
-    }
-
-    # 5. Output file paths
+    # 4. Output file paths
     geojson_path = out_dir / "evidence.geojson"
     map_path = out_dir / "map.html"
     evidence_path = out_dir / "evidence.json"
 
-    # 6. Generate GeoJSON
+    # 5. Generate GeoJSON
     generate_geojson(
-        polygons=polygons_4326,
+        polygons=polygons_4326 if georef_available else None,
         bboxes_geo=bboxes_processed,
         target=target,
         confidence=confidence,
         output_path=geojson_path,
+        georeferenced=georef_available,
     )
 
-    # 7. Generate interactive Folium map (if georeferenced)
+    # 6. Generate Folium map or fallback HTML
     if georef_available and (all_lons and all_lats):
         generate_folium_map(
             polygons=polygons_4326,
@@ -261,11 +449,10 @@ def process_m2_detector_output(
             output_html_path=map_path,
         )
     else:
-        # Generate non-georeferenced placeholder map HTML with quality warning
         warning_msg = (
-            detector_body.get("warnings", [
-                "Images are not georeferenced; pixel coordinate grid used."
-            ])[0] if detector_body.get("warnings") else "Non-georeferenced input"
+            warnings[0]
+            if warnings
+            else "Images are not georeferenced; geographic coordinates and real-world area are unavailable."
         )
         map_html_content = f"""<!DOCTYPE html>
 <html>
@@ -284,14 +471,14 @@ def process_m2_detector_output(
 </div></body></html>"""
         map_path.write_text(map_html_content, encoding="utf-8")
 
-    # 8. Generate evidence.json
+    # 7. Generate evidence.json
     raster_meta = {
         "crs": native_crs,
         "transform": transform,
         "geospatial_reference_available": georef_available,
-        "geographic_bbox": detector_body.get("geographic_bbox"),
-        "changed_pixels": detector_body.get("changed_pixels"),
-        "change_fraction": detector_body.get("change_fraction"),
+        "geographic_bbox": raw_data.get("geographic_bbox"),
+        "changed_pixels": raw_data.get("changed_pixels"),
+        "change_fraction": raw_data.get("change_fraction"),
     }
 
     evidence = generate_evidence_json(
@@ -305,20 +492,21 @@ def process_m2_detector_output(
         map_path=map_path,
         raster_metadata=raster_meta,
         output_path=evidence_path,
+        georeferenced=georef_available,
+        warnings=warnings,
     )
 
-    # Attach quality / detector metadata
+    # Attach detector / M4 metadata
     evidence["detector_metadata"] = {
-        "detector": detector_body.get("detector"),
-        "detector_type": detector_body.get("detector_type"),
-        "quality": detector_body.get("quality", {}),
-        "warnings": detector_body.get("warnings", []),
+        "detector": raw_data.get("detector"),
+        "detector_type": raw_data.get("detector_type"),
+        "quality": raw_data.get("quality", {}),
+        "warnings": warnings,
         "is_m4_wrapped": is_m4_wrapped,
         "m4_claim": m4_claim,
     }
 
-    # If M2 reported changed_area_sq_m, include it
-    if changed_area_sq_m is not None:
+    if georef_available and changed_area_sq_m is not None and evidence.get("area"):
         evidence["area"]["m2_reported_area_sq_m"] = changed_area_sq_m
 
     # Re-save with updated extra metadata
@@ -326,6 +514,10 @@ def process_m2_detector_output(
         json.dump(evidence, f, indent=2)
 
     return evidence
+
+
+# Backwards-compatible alias
+process_m2_detector_output = process_m2_result
 
 
 def process_m3_pipeline_payload(
@@ -345,7 +537,7 @@ def process_m3_pipeline_payload(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load payload from file or dict
+    # 1. Load payload from file, dict, or pipeline result object
     if isinstance(payload, (str, Path)):
         p_path = Path(payload)
         if p_path.is_file():
@@ -354,9 +546,17 @@ def process_m3_pipeline_payload(
         else:
             raw_data = json.loads(str(payload))
     elif isinstance(payload, dict):
-        raw_data = payload
+        raw_data = dict(payload)
+    elif hasattr(payload, "to_dict") and callable(payload.to_dict):
+        raw_data = payload.to_dict()
+        if hasattr(payload, "to_gis_evidence") and callable(payload.to_gis_evidence):
+            gis_ev_obj = payload.to_gis_evidence()
+            if "gis_evidence" not in raw_data:
+                raw_data["gis_evidence"] = gis_ev_obj
+            elif isinstance(raw_data["gis_evidence"], dict):
+                raw_data["gis_evidence"].update(gis_ev_obj)
     else:
-        raise TypeError(f"Expected dict or path to JSON, got {type(payload).__name__}")
+        raise TypeError(f"Expected dict, M3 result object, or path to JSON, got {type(payload).__name__}")
 
     # 2. Extract classification and confidence
     pred = raw_data.get("prediction", {})
@@ -376,11 +576,20 @@ def process_m3_pipeline_payload(
         confidence = float(conf_data)
 
     # 3. Extract GIS metadata
-    gis_ev = raw_data.get("gis_evidence", {})
+    gis_ev = raw_data.get("gis_evidence") or raw_data.get("metadata", {})
     reg = raw_data.get("registration", {})
     native_crs = gis_ev.get("crs") or reg.get("crs") or "EPSG:32632"
-    res_meters = gis_ev.get("resolution_meters") or reg.get("resolution") or [10.0, 10.0]
-    pixel_dims = gis_ev.get("pixel_dimensions") or raw_data.get("optical", {}).get("shape", [4, 512, 512])[-2:]
+    res_meters = (
+        gis_ev.get("resolution_meters")
+        or gis_ev.get("resolution")
+        or reg.get("resolution")
+        or [10.0, 10.0]
+    )
+    pixel_dims = (
+        gis_ev.get("pixel_dimensions")
+        or gis_ev.get("spatial_shape")
+        or raw_data.get("optical", {}).get("shape", [4, 512, 512])[-2:]
+    )
 
     # 4. Extract Footprint Polygon & Bounds
     poly_geojson = gis_ev.get("polygon_geojson")
@@ -527,6 +736,22 @@ def process_m3_pipeline_payload(
     return evidence
 
 
+def process_m3_result(
+    payload: Any,
+    output_dir: str | Path = "output",
+    export_layers: bool = True,
+) -> dict[str, Any]:
+    """
+    Ingest a raw M3 Optical+SAR pipeline result (object, dict, or JSON path) and run M5.
+    If in-memory raster layers (optical_data, registered_sar_data) are present and export_layers=True,
+    multimodal layers are exported to GIS-ready GeoTIFFs.
+    """
+    if hasattr(payload, "optical_data") and getattr(payload, "optical_data", None) is not None and export_layers:
+        from geospatial.m3_adapter import process_m3_result as adapter_process_m3
+        return adapter_process_m3(payload, output_dir=output_dir, export_layers=export_layers)
+    return process_m3_pipeline_payload(payload, output_dir=output_dir)
+
+
 def process_m2_m3_result(
     payload: dict[str, Any] | M2M3Payload | str | Path,
     output_dir: str | Path = "output",
@@ -558,9 +783,13 @@ def process_m2_m3_result(
             "Expected dict, M2M3Payload, or path to JSON file."
         )
 
-    # If payload is an M2 detector output or M4 wrapper, route to process_m2_detector_output
+    # If payload is an M4 wrapper, route to process_m4_result
+    if _is_m4_payload(data):
+        return process_m4_result(data, output_dir=output_dir)
+
+    # If payload is an M2 detector output, route to process_m2_result
     if _is_m2_detector_payload(data):
-        return process_m2_detector_output(data, output_dir=output_dir)
+        return process_m2_result(data, output_dir=output_dir)
 
     # If payload is an M3 multimodal pipeline output, route to process_m3_pipeline_payload
     if _is_m3_payload(data):

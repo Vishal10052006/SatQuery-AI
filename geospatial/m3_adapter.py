@@ -9,6 +9,7 @@ This module extracts:
 """
 
 from collections.abc import Sequence
+import json
 from pathlib import Path
 from typing import Any
 
@@ -289,10 +290,25 @@ def process_m3_evidence_to_m5(
         evidence["exported_layers"] = {k: str(p.as_posix()) for k, p in exported_layers.items()}
 
     # Attach M3 quality flags to metadata
+    reg_passed = m3_gis_evidence.get("registration_passed")
+    reg_score = m3_gis_evidence.get("registration_score")
     evidence["m3_validation"] = {
-        "registration_passed": m3_gis_evidence.get("registration_passed"),
-        "registration_score": m3_gis_evidence.get("registration_score"),
+        "registration_passed": reg_passed,
+        "registration_score": reg_score,
     }
+    evidence["m3_multimodal_metadata"] = {
+        "registration_passed": reg_passed,
+        "registration_score": reg_score,
+        "optical": m3_gis_evidence.get("optical", {}),
+        "sar": m3_gis_evidence.get("sar", {}),
+        "confidence": m3_gis_evidence.get("confidence_score"),
+        "predicted_class": m3_gis_evidence.get("predicted_class"),
+    }
+
+    # Re-save updated evidence.json
+    ev_path = out_dir / "evidence.json"
+    with open(ev_path, "w", encoding="utf-8") as f:
+        json.dump(evidence, f, indent=2)
 
     return evidence
 
@@ -320,9 +336,8 @@ def process_m3_result(
         if "layers" in m3_result and "crs" in m3_result:
             return process_m3_evidence_to_m5(m3_result, output_dir=output_dir, export_layers=export_layers)
         else:
-            gis_meta = m3_result.get("to_gis_evidence", lambda: m3_result)() if callable(m3_result.get("to_gis_evidence")) else m3_result
-            m3_gis_evidence = dict(gis_meta)
-            return process_m3_evidence_to_m5(m3_gis_evidence, output_dir=output_dir, export_layers=export_layers)
+            from geospatial.integration import process_m3_pipeline_payload
+            return process_m3_pipeline_payload(m3_result, output_dir=output_dir)
 
     # If it is an M3 result object
     gis_meta = m3_result.to_gis_evidence() if hasattr(m3_result, "to_gis_evidence") else {}
@@ -383,6 +398,15 @@ def process_m3_result(
         ]],
     }
 
+    reg_dict = getattr(m3_result, "registration", {}) if isinstance(getattr(m3_result, "registration", None), dict) else {}
+    reg_passed = gis_meta.get("registration_passed")
+    if reg_passed is None:
+        reg_passed = reg_dict.get("passed", True)
+
+    reg_score = gis_meta.get("registration_score")
+    if reg_score is None:
+        reg_score = reg_dict.get("registration_score", 1.0)
+
     m3_gis_evidence = {
         "crs": crs,
         "bounds": bounds,
@@ -390,11 +414,13 @@ def process_m3_result(
         "resolution": gis_meta.get("resolution", (10.0, 10.0)),
         "spatial_shape": gis_meta.get("spatial_shape", (512, 512)),
         "footprint_geojson": footprint_geojson,
-        "registration_passed": gis_meta.get("registration_passed", True),
-        "registration_score": gis_meta.get("registration_score", 1.0),
+        "registration_passed": reg_passed,
+        "registration_score": reg_score,
         "confidence_score": confidence_score,
         "predicted_class": predicted_class,
         "layers": layers,
+        "optical": getattr(m3_result, "optical", {}),
+        "sar": getattr(m3_result, "sar", {}),
     }
 
     return process_m3_evidence_to_m5(

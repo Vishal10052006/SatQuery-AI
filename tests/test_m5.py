@@ -13,16 +13,25 @@ import shapely.geometry
 from geospatial.area import calculate_polygon_area, calculate_total_area
 from geospatial.coordinates import pixel_bbox_to_geo_bbox, pixel_to_geo
 from geospatial.evidence import generate_evidence_json, generate_geojson
-from geospatial.integration import process_m2_m3_result
+from geospatial.integration import (
+    process_m2_m3_result,
+    process_m2_result,
+    process_m3_result,
+    process_m4_result,
+)
 from geospatial.m3_adapter import (
     export_layer_to_geotiff,
     process_m3_evidence_to_m5,
-    process_m3_result,
 )
 from geospatial.metadata import read_geotiff_metadata
 from geospatial.pipeline import run_geospatial_pipeline
 from geospatial.polygons import mask_to_polygons
-from geospatial.schema import M2M3Payload
+from geospatial.schema import (
+    M2ChangeDetectionResult,
+    M2M3Payload,
+    M2Region,
+    M4SpecialistResult,
+)
 from geospatial.visualization import generate_folium_map
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -32,7 +41,10 @@ SAMPLE_MASK = DATA_MOCK_DIR / "change_mask.npy"
 M2_RESULT_JSON = DATA_MOCK_DIR / "m2_result.json"
 M2_GEOREF_JSON = DATA_MOCK_DIR / "m2_georef_output.json"
 M2_NON_GEOREF_JSON = DATA_MOCK_DIR / "m2_non_georef_output.json"
+M2_REAL_RESULT_JSON = DATA_MOCK_DIR / "m2_real_result.json"
+M2_NON_GEOREFERENCED_JSON = DATA_MOCK_DIR / "m2_non_georeferenced.json"
 M4_SPECIALIST_JSON = DATA_MOCK_DIR / "m4_specialist_result.json"
+M4_M2_RESULT_JSON = DATA_MOCK_DIR / "m4_m2_result.json"
 M3_PIPELINE_JSON = DATA_MOCK_DIR / "m3_pipeline_output.json"
 OUTPUT_TEST_DIR = BASE_DIR / "output" / "test_run"
 
@@ -558,6 +570,214 @@ class TestM5Geospatial:
         assert evidence["m3_multimodal_metadata"]["registration_score"] == 0.4005
         assert evidence["m3_multimodal_metadata"]["registration_passed"] is False
         assert evidence["m3_multimodal_metadata"]["prediction"]["predicted_class_name"] == "Vegetation"
+
+    def test_m2_georeferenced_integration(self):
+        """Verify processing real georeferenced M2 payload with dynamic CRS and EPSG:4326 reprojection."""
+        out_dir = OUTPUT_TEST_DIR / "m2_real_georef_test"
+        evidence = process_m2_result(M2_REAL_RESULT_JSON, output_dir=out_dir)
+
+        # Basic fields
+        assert evidence["target"] == "newly constructed buildings"
+        assert evidence["confidence"] == 0.75
+        assert evidence["change_detected"] is True
+        assert evidence["raster_metadata"]["crs"] == "EPSG:32643"
+        assert evidence["raster_metadata"]["geospatial_reference_available"] is True
+
+        # Region metadata preservation
+        assert len(evidence["bounding_boxes"]) == 1
+        bbox = evidence["bounding_boxes"][0]
+        assert bbox["region_id"] == 1
+        assert bbox["pixel_count"] == 350
+        assert bbox["confidence"] == 0.88
+        assert bbox["target"] == "newly constructed buildings"
+        assert bbox["pixel_bbox"] == [20.0, 30.0, 55.0, 65.0]
+
+        # Coordinates converted to EPSG:4326 (WGS84 degrees, lon ~75°E, lat ~27°N)
+        assert bbox["geo_bbox"] is not None
+        min_lon, min_lat, max_lon, max_lat = bbox["geo_bbox"]
+        assert 60.0 <= min_lon <= 85.0
+        assert 20.0 <= min_lat <= 40.0
+        assert min_lon < max_lon
+        assert min_lat < max_lat
+
+        # Area validation
+        assert evidence["area"] is not None
+        assert evidence["area"]["total_sq_meters"] > 0
+        assert evidence["area"]["total_hectares"] > 0
+        assert evidence["area"]["m2_reported_area_sq_m"] == 45000.0
+
+        # Artifacts generation
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+        # Verify GeoJSON uses EPSG:4326 coordinates and preserves properties
+        with open(out_dir / "evidence.geojson", "r", encoding="utf-8") as f:
+            geojson_data = json.load(f)
+            assert geojson_data["type"] == "FeatureCollection"
+            assert len(geojson_data["features"]) >= 1
+            feat = geojson_data["features"][0]
+            assert feat["geometry"]["type"] == "Polygon"
+            coords = feat["geometry"]["coordinates"][0]
+            for pt in coords:
+                assert 60.0 <= pt[0] <= 85.0
+                assert 20.0 <= pt[1] <= 40.0
+            assert feat["properties"]["region_id"] == 1
+            assert feat["properties"]["pixel_count"] == 350
+
+    def test_m2_non_georeferenced_integration(self):
+        """Verify non-georeferenced M2 output sets geographic coordinates and area to null and adds warning."""
+        out_dir = OUTPUT_TEST_DIR / "m2_real_non_georef_test"
+        evidence = process_m2_result(M2_NON_GEOREFERENCED_JSON, output_dir=out_dir)
+
+        assert evidence["change_detected"] is True
+        assert evidence["raster_metadata"]["geospatial_reference_available"] is False
+        assert evidence["raster_metadata"]["crs"] is None
+        assert evidence["raster_metadata"]["transform"] is None
+
+        # Requirement 7: Geographic coordinates and area must be null
+        assert evidence["geographic_coordinates"] is None
+        assert evidence["area"] is None
+
+        # Requirement 7: Warning must be present
+        expected_warning = "Images are not georeferenced; geographic coordinates and real-world area are unavailable."
+        assert expected_warning in evidence["warnings"]
+
+        # Pixel coordinates preserved
+        assert len(evidence["bounding_boxes"]) == 2
+        bbox1 = evidence["bounding_boxes"][0]
+        assert bbox1["region_id"] == 1
+        assert bbox1["pixel_count"] == 350
+        assert bbox1["pixel_bbox"] == [20.0, 30.0, 55.0, 65.0]
+        assert bbox1["geo_bbox"] is None
+        assert bbox1["area_sq_m"] is None
+
+        # Artifacts generation
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+        # Verify GeoJSON does NOT invent latitude/longitude
+        with open(out_dir / "evidence.geojson", "r", encoding="utf-8") as f:
+            geojson_data = json.load(f)
+            assert geojson_data["type"] == "FeatureCollection"
+            for feat in geojson_data["features"]:
+                assert feat["geometry"] is None
+                assert expected_warning in feat["properties"]["warning"]
+
+    def test_m4_wrapped_m2_integration(self):
+        """Verify processing M4 SpecialistResult wrapper extracting inner M2 evidence."""
+        out_dir = OUTPUT_TEST_DIR / "m4_wrapped_m2_test"
+        evidence = process_m4_result(M4_M2_RESULT_JSON, output_dir=out_dir)
+
+        assert evidence["target"] == "newly constructed buildings"
+        assert evidence["confidence"] == 0.75
+        assert evidence["change_detected"] is True
+        assert evidence["detector_metadata"]["is_m4_wrapped"] is True
+        assert "Detected 2 changed region(s)" in evidence["detector_metadata"]["m4_claim"]
+        assert evidence["raster_metadata"]["crs"] == "EPSG:32643"
+        assert evidence["area"]["total_hectares"] > 0
+
+        # Artifacts generation
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+        # Also test passing M4 wrapper to process_m2_result directly (auto-detection)
+        auto_dir = OUTPUT_TEST_DIR / "m4_auto_detect_test"
+        auto_evidence = process_m2_result(M4_M2_RESULT_JSON, output_dir=auto_dir)
+        assert auto_evidence["detector_metadata"]["is_m4_wrapped"] is True
+        assert (auto_dir / "evidence.json").exists()
+
+    def test_21_real_m3_pipeline_to_m5_integration(self, tmp_path: Path):
+        """
+        Verify real end-to-end integration from M3 run_optical_sar_pipeline()
+        to M5 process_m3_result() without fake or mock runtime.
+        """
+        import affine
+        import rasterio
+        from rasterio.crs import CRS as RioCRS
+        from modules.optical_sar.pipeline import run_optical_sar_pipeline
+        from modules.optical_sar.config import OpticalSARConfig
+
+        # 1. Create real test GeoTIFF rasters with projected CRS EPSG:32632
+        pixel_size = 10.0
+        transform = affine.Affine(pixel_size, 0.0, 684000.0, 0.0, -pixel_size, 5339120.0)
+        opt_path = tmp_path / "real_s2.tif"
+        sar_path = tmp_path / "real_s1.tif"
+
+        # Optical 4-band synthetic raster (64x64)
+        y, x = np.mgrid[0:64, 0:64]
+        base_opt = ((x + y) * 2.0 + 10.0).astype(np.float32)
+        opt_data = np.stack([base_opt * (i + 1) for i in range(4)])
+        with rasterio.open(
+            opt_path, "w", driver="GTiff", height=64, width=64, count=4,
+            dtype="float32", crs=RioCRS.from_string("EPSG:32632"), transform=transform,
+        ) as dst:
+            dst.write(opt_data)
+
+        # SAR 2-band synthetic raster (64x64)
+        base_sar = np.random.RandomState(42).normal(loc=0.2, scale=0.05, size=(2, 64, 64)).astype(np.float32)
+        with rasterio.open(
+            sar_path, "w", driver="GTiff", height=64, width=64, count=2,
+            dtype="float32", crs=RioCRS.from_string("EPSG:32632"), transform=transform,
+        ) as dst:
+            dst.write(base_sar)
+
+        # 2. Run REAL M3 execution pipeline
+        config = OpticalSARConfig()
+        m3_result = run_optical_sar_pipeline(
+            optical_path=opt_path,
+            sar_path=sar_path,
+            config=config,
+            run_inference=True,
+        )
+
+        assert m3_result is not None
+        assert hasattr(m3_result, "to_dict")
+        assert hasattr(m3_result, "to_gis_evidence")
+
+        # 3. Direct handoff to M5 GIS layer (In-memory, no manual JSON copying)
+        out_dir = OUTPUT_TEST_DIR / "real_m3_pipeline_test"
+        m5_evidence = process_m3_result(m3_result, output_dir=out_dir)
+
+        # 4. Verify M5 output and GIS preservation
+        assert m5_evidence["change_detected"] is True
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+        # Dynamic CRS handling (EPSG:32632 preserved in metadata)
+        assert m5_evidence["raster_metadata"]["crs"] == "EPSG:32632"
+        assert m5_evidence["geographic_coordinates"] is not None
+
+        # GeoJSON features reprojected to EPSG:4326 (WGS84 degrees)
+        with open(out_dir / "evidence.geojson", "r", encoding="utf-8") as f:
+            geojson = json.load(f)
+            assert geojson["type"] == "FeatureCollection"
+            assert len(geojson["features"]) >= 1
+            poly_coords = geojson["features"][0]["geometry"]["coordinates"][0]
+            for lon, lat in poly_coords:
+                # Lon ~ 11°E, Lat ~ 48°N in Bavaria/UTM zone 32N
+                assert 10.0 <= lon <= 13.0
+                assert 47.0 <= lat <= 49.5
+
+        # Area calculation in square meters and hectares (geodesic ellipsoid)
+        assert m5_evidence["area"]["total_sq_meters"] > 0
+        assert m5_evidence["area"]["total_hectares"] > 0
+
+        # Registration quality & passed status faithfully preserved
+        m3_meta = m5_evidence["m3_multimodal_metadata"]
+        assert "registration_passed" in m3_meta
+        assert m3_meta["registration_passed"] == m3_result.registration["passed"]
+        assert m3_meta["registration_score"] == m3_result.registration["registration_score"]
+
+        # Optical & SAR quality preserved
+        assert "optical" in m3_meta
+        assert "sar" in m3_meta
+        assert "confidence" in m3_meta
+
+
 
 
 

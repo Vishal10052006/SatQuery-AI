@@ -1,0 +1,83 @@
+{
+  "task": "change_detection",
+  "model": "pixel-difference-baseline",
+  "status": "success",
+  "confidence": 0.75,
+  "claim": "Detected 2 changed region(s) for target 'newly constructed buildings' with 450 total changed pixels (45000.0 m²).",
+  "evidence": {
+    "task": "change_detection",
+    "status": "success",
+    "target": "newly constructed buildings",
+    "detector": "pixel-difference-baseline",
+    "detector_type": "baseline",
+    "change_detected": true,
+    "confidence": 0.75,
+    "changed_pixels": 450,
+    "change_fraction": 0.043945,
+    "mean_difference": 0.03812,
+    "number_of_regions": 2,
+    "region_sizes": [350, 100],
+    "geospatial_reference_available": true,
+    "crs": "EPSG:32643",
+    "transform": [10.0, 0.0, 500000.0, 0.0, -10.0, 3000000.0],
+    "changed_area_sq_m": 45000.0,
+    "regions": [
+      {
+        "region_id": 1,
+        "pixel_count": 350,
+        "confidence": 0.88,
+        "target": "newly constructed buildings",
+        "area_sq_m": 35000.0,
+        "bbox_pixel": {
+          "xmin": 20,
+          "ymin": 30,
+          "xmax": 55,
+          "ymax": 65
+        },
+        "centroid_pixel": {
+          "x": 37.5,
+          "y": 47.5
+        },
+        "polygon_pixel": [
+          [20, 30],
+          [55, 30],
+          [55, 65],
+          [20, 65],
+          [20, 30]
+        ],
+        "bbox_geo": {
+          "top_left": [500200.0, 2999700.0],
+          "top_right": [500560.0, 2999700.0],
+          "bottom_right": [500560.0, 2999340.0],
+          "bottom_left": [500200.0, 2999340.0]
+        },
+        "centroid_geo": {
+          "x": 500375.0,
+          "y": 2999525.0
+        },
+        "polygon_geo": [
+          [500200.0, 2999700.0],
+          [500550.0, 2999700.0],
+          [500550.0, 2999350.0],
+          [500200.0, 2999350.0],
+          [500200.0, 2999700.0]
+        ]
+      }
+    ],
+    "quality": {
+      "alignment_status": "already_aligned",
+      "alignment_quality": 1.0,
+      "valid_pixel_fraction": 1.0,
+      "georeferenced": true,
+      "detector_type": "baseline",
+      "model_status": "success",
+      "num_regions": 2
+    },
+    "warnings": []
+  },
+  "artifacts": [
+    "composite.png",
+    "overlay.png",
+    "mask.npy"
+  ]
+}
