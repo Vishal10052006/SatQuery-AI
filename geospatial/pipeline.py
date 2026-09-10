@@ -4,26 +4,28 @@ Coordinates GeoTIFF metadata reading, coordinate transformations, polygon extrac
 geodesic area computation, map visualization, and evidence generation.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any
+
 import numpy as np
 
-from geospatial.metadata import read_geotiff_metadata
 from geospatial.coordinates import pixel_bbox_to_geo_bbox, pixel_to_geo
+from geospatial.evidence import generate_evidence_json, generate_geojson
+from geospatial.metadata import read_geotiff_metadata
 from geospatial.polygons import mask_to_polygons
 from geospatial.visualization import generate_folium_map
-from geospatial.evidence import generate_geojson, generate_evidence_json
 
 
 def run_geospatial_pipeline(
-    reference_geotiff: Union[str, Path],
-    change_mask: Optional[Union[str, Path, np.ndarray]] = None,
-    bounding_boxes: Optional[Sequence[Union[Sequence[Union[int, float]], Dict[str, Any]]]] = None,
+    reference_geotiff: str | Path,
+    change_mask: str | Path | np.ndarray | None = None,
+    bounding_boxes: Sequence[Sequence[int | float] | dict[str, Any]] | None = None,
     target: str = "detected_change",
     confidence: float = 0.85,
-    change_detected: Optional[bool] = None,
-    output_dir: Union[str, Path] = "output",
-) -> Dict[str, Any]:
+    change_detected: bool | None = None,
+    output_dir: str | Path = "output",
+) -> dict[str, Any]:
     """
     Run the end-to-end M5 geospatial processing pipeline.
 
@@ -48,7 +50,7 @@ def run_geospatial_pipeline(
     crs = meta["crs"]
 
     # 2. Process pixel bounding boxes into geographic coordinates
-    bboxes_geo: List[Dict[str, Any]] = []
+    bboxes_geo: list[dict[str, Any]] = []
     if bounding_boxes:
         for bbox in bounding_boxes:
             b_info = pixel_bbox_to_geo_bbox(bbox, transform=transform, crs=crs, to_crs="EPSG:4326")
@@ -71,8 +73,8 @@ def run_geospatial_pipeline(
         change_detected = bool(change_detected)
 
     # 4. Calculate geographic coordinates summary (center, bounds, centroids)
-    all_lons: List[float] = []
-    all_lats: List[float] = []
+    all_lons: list[float] = []
+    all_lats: list[float] = []
 
     for poly in polygons:
         min_lon, min_lat, max_lon, max_lat = poly.bounds

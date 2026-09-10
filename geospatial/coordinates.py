@@ -3,13 +3,15 @@ Coordinate transformation module for SatQuery-AI M5.
 Handles conversion between pixel coordinates and geographic coordinates (EPSG:4326).
 """
 
-from typing import Any, Dict, List, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
+
+import rasterio.transform
 from affine import Affine
 from pyproj import CRS, Transformer
-import rasterio.transform
 
 
-def _ensure_affine(transform: Union[Affine, Sequence[float]]) -> Affine:
+def _ensure_affine(transform: Affine | Sequence[float]) -> Affine:
     """Helper to convert flat list/tuple or Affine object to Affine."""
     if isinstance(transform, Affine):
         return transform
@@ -26,11 +28,11 @@ def _ensure_affine(transform: Union[Affine, Sequence[float]]) -> Affine:
 def pixel_to_geo(
     col: float,
     row: float,
-    transform: Union[Affine, Sequence[float]],
-    crs: Union[str, CRS, Any],
+    transform: Affine | Sequence[float],
+    crs: str | CRS | Any,
     to_crs: str = "EPSG:4326",
     offset: str = "center",
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     Convert pixel coordinate (col, row) to geographic coordinate (longitude, latitude).
 
@@ -66,11 +68,11 @@ def pixel_to_geo(
 
 
 def pixel_bbox_to_geo_bbox(
-    bbox_pixel: Union[Sequence[float], Dict[str, float]],
-    transform: Union[Affine, Sequence[float]],
-    crs: Union[str, CRS, Any],
+    bbox_pixel: Sequence[float] | dict[str, float],
+    transform: Affine | Sequence[float],
+    crs: str | CRS | Any,
     to_crs: str = "EPSG:4326",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Convert a pixel bounding box to geographic coordinates (EPSG:4326).
 
@@ -118,7 +120,7 @@ def pixel_bbox_to_geo_bbox(
         (col_min, row_max),
     ]
 
-    corners_geo: List[List[float]] = []
+    corners_geo: list[list[float]] = []
     for c, r in corners_pixel:
         lon, lat = pixel_to_geo(c, r, aff, crs, to_crs=to_crs, offset="ul")
         corners_geo.append([lon, lat])

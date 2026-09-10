@@ -4,12 +4,13 @@ Reads spatial reference, dimension, resolution, and affine transformation from r
 """
 
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any
+
 import rasterio
 from rasterio.crs import CRS
 
 
-def read_geotiff_metadata(geotiff_path: Union[str, Path]) -> Dict[str, Any]:
+def read_geotiff_metadata(geotiff_path: str | Path) -> dict[str, Any]:
     """
     Read metadata from a GeoTIFF raster file using rasterio.
 
@@ -55,7 +56,7 @@ def read_geotiff_metadata(geotiff_path: Union[str, Path]) -> Dict[str, Any]:
         # Transform coefficients as flat tuple / list
         transform_coeffs = [float(val) for val in src.transform]
 
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "file_path": str(path.resolve()),
             "crs": crs_str,
             "crs_epsg": epsg_code,

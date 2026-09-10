@@ -7,7 +7,8 @@ to invoke the geospatial processing engine.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any
+
 from pyproj import CRS, Transformer
 from shapely.geometry import Polygon
 
@@ -17,31 +18,31 @@ from geospatial.schema import M2M3Payload
 from geospatial.visualization import generate_folium_map
 
 
-def _is_m2_detector_payload(data: Dict[str, Any]) -> bool:
+def _is_m2_detector_payload(data: dict[str, Any]) -> bool:
     """Check if dictionary matches M2 detector or M4 wrapper output format."""
-    if "task" in data and data.get("task") == "change_detection":
-        return True
-    if "regions" in data or "changed_pixels" in data:
-        return True
-    if "evidence" in data and isinstance(data["evidence"], dict):
-        if "regions" in data["evidence"] or "changed_pixels" in data["evidence"]:
-            return True
-    return False
+    return bool(
+        (data.get("task") == "change_detection")
+        or ("regions" in data or "changed_pixels" in data)
+        or (
+            "evidence" in data
+            and isinstance(data["evidence"], dict)
+            and ("regions" in data["evidence"] or "changed_pixels" in data["evidence"])
+        )
+    )
 
 
-def _is_m3_payload(data: Dict[str, Any]) -> bool:
+def _is_m3_payload(data: dict[str, Any]) -> bool:
     """Check if dictionary matches M3 multimodal Optical+SAR pipeline output format."""
-    if "gis_evidence" in data and ("optical" in data or "sar" in data or "registration" in data or "fusion" in data):
-        return True
-    if "optical" in data and "sar" in data and ("prediction" in data or "fusion" in data):
-        return True
-    return False
+    return bool(
+        ("gis_evidence" in data and ("optical" in data or "sar" in data or "registration" in data or "fusion" in data))
+        or ("optical" in data and "sar" in data and ("prediction" in data or "fusion" in data))
+    )
 
 
 def process_m2_detector_output(
-    payload: Union[Dict[str, Any], str, Path],
-    output_dir: Union[str, Path] = "output",
-) -> Dict[str, Any]:
+    payload: dict[str, Any] | str | Path,
+    output_dir: str | Path = "output",
+) -> dict[str, Any]:
     """
     Process an M2 Change Detection output payload (or M4 SpecialistResult wrapper)
     and produce GIS-compliant GeoJSON, interactive Folium satellite map, and evidence.json.
@@ -88,8 +89,8 @@ def process_m2_detector_output(
     regions = detector_body.get("regions", [])
     changed_area_sq_m = detector_body.get("changed_area_sq_m")
 
-    polygons_4326: List[Polygon] = []
-    bboxes_processed: List[Dict[str, Any]] = []
+    polygons_4326: list[Polygon] = []
+    bboxes_processed: list[dict[str, Any]] = []
 
     # 3. Process regions based on georeferencing availability
     if georef_available and native_crs:
@@ -204,8 +205,8 @@ def process_m2_detector_output(
             })
 
     # 4. Calculate geographic coordinates summary
-    all_lons: List[float] = []
-    all_lats: List[float] = []
+    all_lons: list[float] = []
+    all_lats: list[float] = []
     if georef_available:
         for poly in polygons_4326:
             min_lon, min_lat, max_lon, max_lat = poly.bounds
@@ -328,9 +329,9 @@ def process_m2_detector_output(
 
 
 def process_m3_pipeline_payload(
-    payload: Union[Dict[str, Any], str, Path],
-    output_dir: Union[str, Path] = "output",
-) -> Dict[str, Any]:
+    payload: dict[str, Any] | str | Path,
+    output_dir: str | Path = "output",
+) -> dict[str, Any]:
     """
     Process an M3 Multimodal (Optical + SAR) pipeline output payload and produce
     GIS-compliant GeoJSON, interactive Folium satellite map, and evidence.json.
@@ -390,7 +391,7 @@ def process_m3_pipeline_payload(
     target_crs = CRS.from_user_input("EPSG:4326")
     transformer = Transformer.from_crs(source_crs, target_crs, always_xy=True)
 
-    polygons_4326: List[Polygon] = []
+    polygons_4326: list[Polygon] = []
     if poly_geojson and "coordinates" in poly_geojson:
         coords_raw = poly_geojson["coordinates"][0]
         pts_4326 = [list(transformer.transform(pt[0], pt[1])) for pt in coords_raw]
@@ -418,8 +419,8 @@ def process_m3_pipeline_payload(
         polygons_4326.append(poly)
 
     # Calculate geographic bounds & center
-    all_lons: List[float] = []
-    all_lats: List[float] = []
+    all_lons: list[float] = []
+    all_lats: list[float] = []
     for p in polygons_4326:
         min_lon, min_lat, max_lon, max_lat = p.bounds
         all_lons.extend([min_lon, max_lon])
@@ -527,9 +528,9 @@ def process_m3_pipeline_payload(
 
 
 def process_m2_m3_result(
-    payload: Union[Dict[str, Any], M2M3Payload, str, Path],
-    output_dir: Union[str, Path] = "output",
-) -> Dict[str, Any]:
+    payload: dict[str, Any] | M2M3Payload | str | Path,
+    output_dir: str | Path = "output",
+) -> dict[str, Any]:
     """
     Unified entrypoint for processing upstream M2 / M3 / M4 outputs.
 

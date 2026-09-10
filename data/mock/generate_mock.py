@@ -5,13 +5,13 @@ Creates a valid sample GeoTIFF, change mask, and upstream M2 detection JSON.
 
 import json
 from pathlib import Path
-from typing import Optional, Union
+
 import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
 
-def create_sample_mock_data(output_dir: Optional[Union[str, Path]] = None):
+def create_sample_mock_data(output_dir: str | Path | None = None):
     if output_dir is None:
         out_path = Path(__file__).resolve().parent
     else:

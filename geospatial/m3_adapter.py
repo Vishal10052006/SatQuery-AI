@@ -8,8 +8,10 @@ This module extracts:
 4. Exports layers to GIS-ready GeoTIFF files with projection metadata
 """
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any
+
 import numpy as np
 import rasterio
 from rasterio.transform import Affine
@@ -19,10 +21,10 @@ from geospatial.pipeline import run_geospatial_pipeline
 
 def export_layer_to_geotiff(
     data_array: np.ndarray,
-    output_path: Union[str, Path],
+    output_path: str | Path,
     crs: Any,
-    transform: Optional[Union[Affine, Sequence[float], Any]] = None,
-    nodata: Optional[float] = None,
+    transform: Affine | Sequence[float] | Any | None = None,
+    nodata: float | None = None,
 ) -> Path:
     """
     Save any extracted 2D or 3D layer into a GIS-standard GeoTIFF file with spatial reference.
@@ -88,9 +90,9 @@ def export_layer_to_geotiff(
 
 
 def export_all_layers_to_geotiff(
-    m3_gis_evidence: Dict[str, Any],
-    output_dir: Union[str, Path] = "output/layers",
-) -> Dict[str, Path]:
+    m3_gis_evidence: dict[str, Any],
+    output_dir: str | Path = "output/layers",
+) -> dict[str, Path]:
     """
     Export all aligned multimodal layers from M3 evidence into individual GeoTIFF files.
 
@@ -108,7 +110,7 @@ def export_all_layers_to_geotiff(
     transform = m3_gis_evidence.get("transform")
     layers = m3_gis_evidence.get("layers", {})
 
-    exported_paths: Dict[str, Path] = {}
+    exported_paths: dict[str, Path] = {}
     for layer_name, layer_arr in layers.items():
         if isinstance(layer_arr, np.ndarray):
             file_path = out_dir / f"{layer_name}.tif"
@@ -126,17 +128,21 @@ def export_all_layers_to_geotiff(
 def extract_gis_evidence_from_m3(
     optical_path: str,
     sar_path: str,
-    scl_path: Optional[str] = None,
+    scl_path: str | None = None,
     weights_path: str = "modules/optical_sar/weights/m3_optical_sar_model.pth",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Execute M3 analysis and extract all GIS-ready evidence for M5.
     Dynamically imports M3 modules if available.
     """
     try:
-        from modules.optical_sar.pipeline import run_optical_sar_pipeline  # type: ignore
         from modules.optical_sar.fusion.model import OpticalSARModel  # type: ignore
-        from modules.optical_sar.optical.features import compute_optical_features  # type: ignore
+        from modules.optical_sar.optical.features import (  # type: ignore
+            compute_optical_features,
+        )
+        from modules.optical_sar.pipeline import (  # type: ignore
+            run_optical_sar_pipeline,
+        )
     except ImportError as e:
         raise ImportError(
             f"Module 3 (Optical + SAR) dependencies not found: {e}. "
@@ -210,10 +216,10 @@ def extract_gis_evidence_from_m3(
 
 
 def process_m3_evidence_to_m5(
-    m3_gis_evidence: Dict[str, Any],
-    output_dir: Union[str, Path] = "output",
+    m3_gis_evidence: dict[str, Any],
+    output_dir: str | Path = "output",
     export_layers: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Bridge M3 extracted GIS evidence into the complete M5 geospatial pipeline.
     Optionally exports all multimodal raster layers to GIS-ready GeoTIFFs.
@@ -251,7 +257,7 @@ def process_m3_evidence_to_m5(
     # 2. Resolve Problem 1 & 2: M3 does not output change mask or localized bounding boxes.
     # Synthesize scene ROI bounding box [0, 0, w, h] so M5 pipeline can geolocate
     # and compute coordinates, area, and vector polygons.
-    bounding_boxes: Optional[List[List[float]]] = None
+    bounding_boxes: list[list[float]] | None = None
     if change_mask is None:
         if hasattr(ref_layer, "shape") and len(ref_layer.shape) >= 2:
             h, w = ref_layer.shape[-2], ref_layer.shape[-1]
@@ -293,9 +299,9 @@ def process_m3_evidence_to_m5(
 
 def process_m3_result(
     m3_result: Any,
-    output_dir: Union[str, Path] = "output",
+    output_dir: str | Path = "output",
     export_layers: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Ingest a raw M3 Optical+SAR pipeline result object or dictionary and run M5.
 
@@ -349,14 +355,16 @@ def process_m3_result(
 
     # Try compute optical features if helper is available
     try:
-        from modules.optical_sar.optical.features import compute_optical_features  # type: ignore
+        from modules.optical_sar.optical.features import (  # type: ignore
+            compute_optical_features,
+        )
         if optical_data is not None:
             features = compute_optical_features(optical_data)
             if "ndvi" in features:
                 layers["ndvi"] = features["ndvi"]
             if "ndwi" in features:
                 layers["ndwi"] = features["ndwi"]
-    except Exception:
+    except (ImportError, AttributeError, KeyError, TypeError, ValueError):
         pass
 
     # Extract bounds and transform

@@ -4,20 +4,22 @@ Produces standardized GeoJSON feature collections and evidence.json artifacts.
 """
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
-from shapely.geometry import Polygon, MultiPolygon, mapping
+from typing import Any
+
+from shapely.geometry import MultiPolygon, Polygon, mapping
 
 from geospatial.area import calculate_polygon_area, calculate_total_area
 
 
 def generate_geojson(
-    polygons: Optional[Sequence[Union[Polygon, MultiPolygon]]] = None,
-    bboxes_geo: Optional[List[Dict[str, Any]]] = None,
+    polygons: Sequence[Polygon | MultiPolygon] | None = None,
+    bboxes_geo: list[dict[str, Any]] | None = None,
     target: str = "detected_change",
     confidence: float = 0.85,
-    output_path: Optional[Union[str, Path]] = None,
-) -> Dict[str, Any]:
+    output_path: str | Path | None = None,
+) -> dict[str, Any]:
     """
     Generate standard GeoJSON FeatureCollection containing polygons and bounding boxes.
 
@@ -34,7 +36,7 @@ def generate_geojson(
     polygons = polygons or []
     bboxes_geo = bboxes_geo or []
 
-    features: List[Dict[str, Any]] = []
+    features: list[dict[str, Any]] = []
 
     # Add change polygons
     for idx, poly in enumerate(polygons):
@@ -78,7 +80,7 @@ def generate_geojson(
             }
             features.append(feature)
 
-    geojson_collection: Dict[str, Any] = {
+    geojson_collection: dict[str, Any] = {
         "type": "FeatureCollection",
         "crs": {
             "type": "name",
@@ -100,14 +102,14 @@ def generate_evidence_json(
     target: str,
     confidence: float,
     change_detected: bool,
-    bounding_boxes: List[Dict[str, Any]],
-    geographic_coordinates: Dict[str, Any],
-    polygons: Sequence[Union[Polygon, MultiPolygon]],
-    geojson_path: Union[str, Path],
-    map_path: Union[str, Path],
-    raster_metadata: Optional[Dict[str, Any]] = None,
-    output_path: Optional[Union[str, Path]] = None,
-) -> Dict[str, Any]:
+    bounding_boxes: list[dict[str, Any]],
+    geographic_coordinates: dict[str, Any],
+    polygons: Sequence[Polygon | MultiPolygon],
+    geojson_path: str | Path,
+    map_path: str | Path,
+    raster_metadata: dict[str, Any] | None = None,
+    output_path: str | Path | None = None,
+) -> dict[str, Any]:
     """
     Generate evidence.json containing detection, geospatial coordinates, areas, and artifact links.
 
@@ -152,7 +154,7 @@ def generate_evidence_json(
     map_str = str(Path(map_path).as_posix()) if map_path else None
     evidence_str = str(Path(output_path).as_posix()) if output_path else None
 
-    evidence: Dict[str, Any] = {
+    evidence: dict[str, Any] = {
         "target": str(target),
         "confidence": float(confidence),
         "change_detected": bool(change_detected),

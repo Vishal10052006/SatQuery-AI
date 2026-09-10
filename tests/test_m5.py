@@ -5,25 +5,25 @@ GIS, Geospatial Processing and Evidence Generation.
 
 import json
 from pathlib import Path
-import pytest
+
 import numpy as np
+import pytest
 import shapely.geometry
 
-from geospatial.metadata import read_geotiff_metadata
-from geospatial.coordinates import pixel_to_geo, pixel_bbox_to_geo_bbox
-from geospatial.polygons import mask_to_polygons
 from geospatial.area import calculate_polygon_area, calculate_total_area
-from geospatial.visualization import generate_folium_map
-from geospatial.evidence import generate_geojson, generate_evidence_json
-from geospatial.pipeline import run_geospatial_pipeline
-from geospatial.schema import M2M3Payload
+from geospatial.coordinates import pixel_bbox_to_geo_bbox, pixel_to_geo
+from geospatial.evidence import generate_evidence_json, generate_geojson
 from geospatial.integration import process_m2_m3_result
 from geospatial.m3_adapter import (
     export_layer_to_geotiff,
     process_m3_evidence_to_m5,
     process_m3_result,
 )
-
+from geospatial.metadata import read_geotiff_metadata
+from geospatial.pipeline import run_geospatial_pipeline
+from geospatial.polygons import mask_to_polygons
+from geospatial.schema import M2M3Payload
+from geospatial.visualization import generate_folium_map
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_MOCK_DIR = BASE_DIR / "data" / "mock"
@@ -119,7 +119,7 @@ class TestM5Geospatial:
             assert isinstance(poly, (shapely.geometry.Polygon, shapely.geometry.MultiPolygon))
             assert poly.is_valid
             assert not poly.is_empty
-            min_lon, min_lat, max_lon, max_lat = poly.bounds
+            min_lon, min_lat, _, _ = poly.bounds
             assert 60.0 <= min_lon <= 85.0
             assert 20.0 <= min_lat <= 40.0
 

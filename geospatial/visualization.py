@@ -3,23 +3,24 @@ Interactive map visualization module for SatQuery-AI M5.
 Generates rich Folium maps with detected regions, bounding boxes, popups, and layer controls.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, cast
+
 import folium
 from folium import LayerControl, TileLayer
-from shapely.geometry import Polygon, MultiPolygon
-from shapely.geometry import mapping
+from shapely.geometry import MultiPolygon, Polygon, mapping
 
 from geospatial.area import calculate_polygon_area
 
 
 def generate_folium_map(
-    polygons: Optional[Sequence[Union[Polygon, MultiPolygon]]] = None,
-    bboxes_geo: Optional[List[Dict[str, Any]]] = None,
-    center_coords: Optional[Tuple[float, float]] = None,
+    polygons: Sequence[Polygon | MultiPolygon] | None = None,
+    bboxes_geo: list[dict[str, Any]] | None = None,
+    center_coords: tuple[float, float] | None = None,
     target: str = "detected_change",
     confidence: float = 0.85,
-    output_html_path: Optional[Union[str, Path]] = None,
+    output_html_path: str | Path | None = None,
     zoom_start: int = 15,
 ) -> folium.Map:
     """
@@ -42,8 +43,8 @@ def generate_folium_map(
     bboxes_geo = bboxes_geo or []
 
     # Calculate overall bounding box to determine map center and bounds
-    all_lats: List[float] = []
-    all_lons: List[float] = []
+    all_lats: list[float] = []
+    all_lons: list[float] = []
 
     for poly in polygons:
         min_lon, min_lat, max_lon, max_lat = poly.bounds

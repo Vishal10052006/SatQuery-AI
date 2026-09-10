@@ -3,15 +3,16 @@ Geodesic area calculation module for SatQuery-AI M5.
 Calculates exact surface areas in square meters and hectares.
 """
 
-from typing import Dict, Sequence, Union
+from collections.abc import Sequence
+
 from pyproj import CRS, Geod
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import MultiPolygon, Polygon
 
 
 def calculate_polygon_area(
-    polygon: Union[Polygon, MultiPolygon],
+    polygon: Polygon | MultiPolygon,
     crs: str = "EPSG:4326",
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Calculate the geodesic surface area of a polygon.
 
@@ -64,9 +65,9 @@ def calculate_polygon_area(
 
 
 def calculate_total_area(
-    polygons: Sequence[Union[Polygon, MultiPolygon]],
+    polygons: Sequence[Polygon | MultiPolygon],
     crs: str = "EPSG:4326",
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Calculate aggregated area across a list of polygons.
 

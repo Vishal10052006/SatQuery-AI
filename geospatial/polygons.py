@@ -3,20 +3,22 @@ Polygon extraction and conversion module for SatQuery-AI M5.
 Converts change masks into Shapely polygons reprojected to EPSG:4326.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, Union
-from affine import Affine
+from typing import Any
+
 import numpy as np
-from pyproj import CRS, Transformer
 import rasterio
 import rasterio.features
 import shapely.geometry
-from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, box
+from affine import Affine
+from pyproj import CRS, Transformer
+from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
 from shapely.ops import transform as shapely_transform
 from shapely.validation import make_valid
 
 
-def _ensure_affine(transform: Union[Affine, Sequence[float]]) -> Affine:
+def _ensure_affine(transform: Affine | Sequence[float]) -> Affine:
     if isinstance(transform, Affine):
         return transform
     if len(transform) == 9:
@@ -29,7 +31,7 @@ def _ensure_affine(transform: Union[Affine, Sequence[float]]) -> Affine:
     raise ValueError(f"Invalid affine transform format: {transform}")
 
 
-def load_mask(mask_input: Union[np.ndarray, str, Path]) -> np.ndarray:
+def load_mask(mask_input: np.ndarray | str | Path) -> np.ndarray:
     """
     Load a change mask from numpy array or file path.
 
@@ -61,13 +63,13 @@ def load_mask(mask_input: Union[np.ndarray, str, Path]) -> np.ndarray:
 
 
 def mask_to_polygons(
-    mask: Union[np.ndarray, str, Path],
-    transform: Union[Affine, Sequence[float]],
-    crs: Union[str, CRS, Any] = None,
+    mask: np.ndarray | str | Path,
+    transform: Affine | Sequence[float],
+    crs: str | CRS | Any = None,
     to_crs: str = "EPSG:4326",
     min_pixel_area: int = 1,
     connectivity: int = 8,
-) -> List[Union[Polygon, MultiPolygon]]:
+) -> list[Polygon | MultiPolygon]:
     """
     Extract polygons from a binary change mask and reproject to target geographic CRS.
 
@@ -90,14 +92,14 @@ def mask_to_polygons(
         return []
 
     # Prepare coordinate transformer if CRS conversion is needed
-    transformer: Optional[Transformer] = None
+    transformer: Transformer | None = None
     if crs is not None:
         source_crs = CRS.from_user_input(crs)
         target_crs = CRS.from_user_input(to_crs)
         if source_crs != target_crs:
             transformer = Transformer.from_crs(source_crs, target_crs, always_xy=True)
 
-    polygons: List[Union[Polygon, MultiPolygon]] = []
+    polygons: list[Polygon | MultiPolygon] = []
 
     # rasterio.features.shapes yields (geojson_geom, val)
     # where mask specifies pixels to vectorize
