@@ -1,0 +1,86 @@
+name: SatQuery Integrated Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "api/**"
+      - "core/**"
+      - "models/**"
+      - "modules/**"
+      - "geospatial/**"
+      - "m1_earthdial/**"
+      - "data/mock/**"
+      - "tests/**"
+      - "M6/frontend/**"
+      - "requirements.txt"
+      - ".github/workflows/integration-tests.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "api/**"
+      - "core/**"
+      - "models/**"
+      - "modules/**"
+      - "geospatial/**"
+      - "m1_earthdial/**"
+      - "data/mock/**"
+      - "tests/**"
+      - "M6/frontend/**"
+      - "requirements.txt"
+      - ".github/workflows/integration-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  python-tests:
+    name: Python integration tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install integrated runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run all Python tests
+        env:
+          MPLBACKEND: Agg
+        run: python -m pytest -q
+
+  frontend-build:
+    name: M6 frontend build and lint
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: M6/frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: M6/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend lint
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
