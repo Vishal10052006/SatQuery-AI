@@ -13,11 +13,18 @@ pyproj>=3.6
 folium>=0.20
 
 # M3 Optical/SAR
+# These are needed by the native M3 integration and its tests.
 torch>=2.1
 torchvision>=0.16
 opencv-python>=4.8
 scipy>=1.10
 scikit-learn>=1.3
+
+# M5 FastAPI / live API boundary
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-multipart>=0.0.20
+httpx>=0.27
 
 # Test
 pytest>=9,<10
