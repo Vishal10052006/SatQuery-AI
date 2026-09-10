@@ -29,5 +29,6 @@ Thumbs.db
 *.log
 
 # Generated outputs
+output/
 outputs/
 results/

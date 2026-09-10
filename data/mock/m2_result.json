@@ -1,0 +1,31 @@
+{
+  "module": "M2_Change_Detection",
+  "reference_geotiff": "data/mock/sample.tif",
+  "change_mask_path": "data/mock/change_mask.npy",
+  "target": "deforestation",
+  "confidence": 0.94,
+  "change_detected": true,
+  "bounding_boxes_pixel": [
+    [
+      40,
+      50,
+      90,
+      100
+    ],
+    [
+      140,
+      160,
+      200,
+      185
+    ]
+  ],
+  "metadata": {
+    "satellite": "Sentinel-2",
+    "resolution_meters": 10.0,
+    "bands": [
+      "B04",
+      "B03",
+      "B02"
+    ]
+  }
+}

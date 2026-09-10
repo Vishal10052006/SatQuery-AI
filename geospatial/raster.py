@@ -41,9 +41,35 @@ def inspect_raster(path: str) -> dict[str, Any]:
         import rasterio  # type: ignore
 
         with rasterio.open(source) as dataset:
-            transform = tuple(float(value) for value in dataset.transform[:6])
-            res_x, res_y = abs(float(dataset.res[0])), abs(float(dataset.res[1]))
             crs_str = str(dataset.crs) if dataset.crs else None
+
+            # Rasterio returns the identity affine transform for
+            # rasters without georeferencing. That identity matrix
+            # represents pixel coordinates, NOT real-world geography.
+            # Never expose it as geospatial metadata.
+            dataset_transform = dataset.transform
+            is_identity_transform = (
+                dataset_transform.a == 1.0
+                and dataset_transform.b == 0.0
+                and dataset_transform.c == 0.0
+                and dataset_transform.d == 0.0
+                and dataset_transform.e == 1.0
+                and dataset_transform.f == 0.0
+            )
+
+            has_georeference = (
+                dataset.crs is not None
+                or bool(dataset.gcps[0])
+                or dataset.rpcs is not None
+            )
+
+            transform = (
+                tuple(float(value) for value in dataset_transform[:6])
+                if has_georeference and not is_identity_transform
+                else None
+            )
+
+            res_x, res_y = abs(float(dataset.res[0])), abs(float(dataset.res[1]))
             nodata_val = dataset.nodata
             if nodata_val is not None:
                 nodata_val = float(nodata_val)
@@ -65,7 +91,7 @@ def inspect_raster(path: str) -> dict[str, Any]:
                 },
                 "resolution": (res_x, res_y),
                 "nodata": nodata_val,
-                "georeferenced": dataset.crs is not None,
+                "georeferenced": has_georeference,
                 "is_projected": projected,
                 "provider": "rasterio",
             }
