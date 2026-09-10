@@ -1,0 +1,9 @@
+{
+  "image_path": "m1_earthdial/examples/sample_satellite.jpg",
+  "question": "What are the major features visible in this satellite image?",
+  "task": "image_vqa",
+  "num_beams": 5,
+  "temperature": 0.0,
+  "max_new_tokens": 128
+}
+
