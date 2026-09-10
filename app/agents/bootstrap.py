@@ -56,12 +56,9 @@ def build_production_controller() -> AgentController:
     """
     Build the production SatQuery controller.
 
-    Native specialist implementations are explicitly wired here.
-    The individual specialist adapters remain responsible for
-    converting native outputs into M4 ToolResult objects.
-
-    M2 grounding is intentionally not wired here yet because its
-    native interface still requires a dedicated M4 bridge.
+    Native M1, M2 change detection, M2 grounding, M3 Optical/SAR,
+    and M5 GIS are wired through the M4 adapter boundary. Native
+    grounding and GIS registration is handled by register_specialists().
     """
 
     from m1_earthdial.earthdial_adapter import analyze_image
@@ -71,7 +68,10 @@ def build_production_controller() -> AgentController:
     return build_m4_controller(
         vqa=analyze_image,
         change_detection=run_change_detection,
+        # Native M2 grounding is registered automatically when no
+        # external grounding specialist is supplied.
         optical_sar=run_optical_sar_pipeline,
-        # M5 is natively integrated by register_specialists().
+        # Native M5 GIS is registered automatically when no external
+        # GIS specialist is supplied.
         gis=None,
     )
