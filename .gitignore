@@ -5,6 +5,8 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv-m1/
+.venv-satquery/
 venv/
 env/
 
@@ -29,5 +31,7 @@ Thumbs.db
 *.log
 
 # Generated outputs
+output/
 outputs/
 results/
+api/runtime/

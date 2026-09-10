@@ -104,7 +104,7 @@ class QueryPlanner:
                         step_id=2,
                         tool=ToolName.M5_GIS,
                         operation="localize",
-                        inputs=["previous_result"],
+                        inputs=["previous_result", "output_dir"],
                         parameters={
                             "target": parsed_query.target,
                         },
@@ -156,7 +156,7 @@ class QueryPlanner:
                         step_id=len(steps) + 1,
                         tool=ToolName.M5_GIS,
                         operation="geospatial_analysis",
-                        inputs=["previous_result"],
+                        inputs=["previous_result", "output_dir"],
                         parameters={
                             "target": parsed_query.target,
                         },
@@ -188,7 +188,7 @@ class QueryPlanner:
                         step_id=2,
                         tool=ToolName.M5_GIS,
                         operation="geospatial_analysis",
-                        inputs=["previous_result"],
+                        inputs=["previous_result", "output_dir"],
                         parameters={
                             "target": parsed_query.target,
                         },

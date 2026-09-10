@@ -49,11 +49,17 @@ def register_specialists(
             build_change_detection_adapter(change_detection),
         )
 
-    if grounding is not None:
-        registry.register(
-            ToolName.M2_GROUNDING,
-            build_grounding_adapter(grounding),
-        )
+    # M2 grounding is natively integrated into this repository.
+    #
+    # When no external specialist is supplied, the adapter uses
+    # models.change.grounding.GroundingAdapter.
+    #
+    # An explicitly supplied `grounding` specialist remains supported
+    # for external integrations and compatibility tests.
+    registry.register(
+        ToolName.M2_GROUNDING,
+        build_grounding_adapter(grounding),
+    )
 
     if optical_sar is not None:
         registry.register(
@@ -61,10 +67,17 @@ def register_specialists(
             build_optical_sar_adapter(optical_sar),
         )
 
-    if gis is not None:
-        registry.register(
-            ToolName.M5_GIS,
-            make_m5_gis_adapter(gis),
-        )
+    # M5 GIS is natively integrated into this repository.
+    #
+    # When no external specialist is supplied, make_m5_gis_adapter()
+    # uses the native geospatial.integration.process_m2_m3_result()
+    # implementation.
+    #
+    # An explicitly supplied `gis` callable is still supported for
+    # compatibility with external specialists and existing tests.
+    registry.register(
+        ToolName.M5_GIS,
+        make_m5_gis_adapter(gis),
+    )
 
     return registry
