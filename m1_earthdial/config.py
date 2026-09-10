@@ -4,19 +4,17 @@ Settings can be overridden using environment variables.
 """
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 
 @dataclass
 class EarthDialConfig:
     """Configuration parameters for EarthDial execution."""
-    
-    # Execution backend: 'auto', 'remote', 'direct', or 'mock'
-    # - 'auto': Checks if local CUDA GPU is present; if yes uses 'direct', else checks for remote URL; falls back to mock if offline.
-    # - 'remote': Sends requests to Colab GPU server via EARTHDIAL_API_URL
-    # - 'direct': Loads weights directly into local GPU memory
-    # - 'mock': Local offline simulator for agent integration tests
+
+    # Execution backend: 'auto', 'remote', 'direct', or 'mock'.
+    # 'auto' prefers a local CUDA GPU, then a reachable remote server.
+    # It never silently falls back to mock inference; mock must be explicit.
     backend: str = os.getenv("EARTHDIAL_BACKEND", "auto").lower()
 
     # Remote server URL (Google Colab FastAPI / ngrok endpoint)
@@ -42,4 +40,3 @@ class EarthDialConfig:
 
 # Default configuration instance
 default_config = EarthDialConfig()
-
