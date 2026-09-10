@@ -1,13 +1,13 @@
 """
 Core adapter module for SatQuery AI Module M1 (EarthDial).
 Implements direct GPU inference, remote Colab GPU client, and offline testing engine.
-Provides the clean `analyze_image` interface for M4 Agent.
+Provides the clean `analyze_image` interface and M4 specialist integration.
 """
 
 import base64
 import io
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from PIL import Image
 
 from .config import EarthDialConfig, default_config
@@ -19,8 +19,8 @@ class EarthDialAdapter:
     """
     Adapter encapsulating EarthDial vision-language model execution.
     Supports:
-      1. Direct execution on CUDA GPU workstations.
-      2. Remote execution against a Google Colab GPU inference server.
+      1. Direct execution on CUDA GPU workstations with >=10GB VRAM.
+      2. Remote execution against a Google Colab GPU inference server (for laptops with RTX 2050 4GB).
       3. Offline mock execution for M4 Agent integration validation.
     """
 
@@ -31,9 +31,20 @@ class EarthDialAdapter:
         self._transform = None
         self._resolved_backend = self._determine_backend()
 
+    def _get_local_vram_gb(self) -> float:
+        """Returns total CUDA VRAM in GB if available, else 0.0."""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                props = torch.cuda.get_device_properties(0)
+                return props.total_memory / (1024 ** 3)
+        except Exception:
+            pass
+        return 0.0
+
     def _determine_backend(self) -> str:
-        """Determines the appropriate backend based on configuration and hardware."""
-        backend_choice = self.config.backend.lower()
+        """Determines the appropriate backend based on configuration and hardware safety."""
+        backend_choice = self.config.backend.lower().strip()
 
         if backend_choice == "mock":
             return "mock"
@@ -42,23 +53,22 @@ class EarthDialAdapter:
         elif backend_choice == "remote":
             return "remote_colab"
         elif backend_choice == "auto":
-            # 1. Check if local CUDA GPU is available
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    return "direct_gpu"
-            except ImportError:
-                pass
+            # 1. Check if local CUDA GPU has sufficient VRAM (>= 10GB for EarthDial 4B in BF16)
+            # Laptops with RTX 2050 (4GB) will safely fail this check to prevent OOM
+            vram_gb = self._get_local_vram_gb()
+            if vram_gb >= self.config.min_vram_gb:
+                return "direct_gpu"
 
-            # 2. Check if remote Colab server is reachable
-            try:
-                import requests
-                health_url = self.config.api_url.rstrip("/") + "/health"
-                r = requests.get(health_url, timeout=1.0)
-                if r.status_code == 200:
-                    return "remote_colab"
-            except Exception:
-                pass
+            # 2. Check if remote Colab server is configured and reachable
+            if self.config.api_url:
+                try:
+                    import requests
+                    health_url = self.config.api_url.rstrip("/") + "/health"
+                    r = requests.get(health_url, timeout=1.5)
+                    if r.status_code == 200:
+                        return "remote_colab"
+                except Exception:
+                    pass
 
             # 3. Fallback to mock engine for local testing
             return "mock"
@@ -66,7 +76,7 @@ class EarthDialAdapter:
             return "mock"
 
     def _ensure_direct_model_loaded(self):
-        """Loads EarthDial model into GPU memory for direct local inference."""
+        """Loads EarthDial model into GPU memory for direct local inference with strict VRAM check."""
         if self._model is not None and self._tokenizer is not None:
             return
 
@@ -82,8 +92,20 @@ class EarthDialAdapter:
 
         if not torch.cuda.is_available():
             raise RuntimeError(
-                "Direct EarthDial inference requires a CUDA-enabled GPU with >=10GB VRAM. "
+                "Direct EarthDial inference requires a CUDA-enabled GPU. "
                 "No CUDA GPU detected on this machine. Please use the Google Colab GPU backend."
+            )
+
+        # Safety constraint: EarthDial 4B requires >= 10GB VRAM
+        vram_gb = self._get_local_vram_gb()
+        gpu_name = torch.cuda.get_device_name(0)
+        if vram_gb < self.config.min_vram_gb:
+            raise RuntimeError(
+                f"Direct EarthDial 4B inference requires at least {self.config.min_vram_gb:.1f} GB GPU VRAM. "
+                f"Detected GPU '{gpu_name}' with only {vram_gb:.2f} GB VRAM. "
+                f"Attempting to load the 4B parameter model (~8.3 GB weights) locally will cause an Out-Of-Memory (OOM) crash. "
+                f"Please switch to remote execution by setting EARTHDIAL_BACKEND=remote and pointing EARTHDIAL_API_URL "
+                f"to your Google Colab T4 GPU inference server."
             )
 
         print(f"[EarthDialAdapter] Loading checkpoint: {self.config.model_checkpoint}")
@@ -138,12 +160,22 @@ class EarthDialAdapter:
         return str(answer).strip()
 
     def _infer_remote(self, image_path: str, question: str, req: ImageVQARequest) -> str:
-        """Sends inference request to remote Google Colab GPU server."""
+        """Sends inference request to remote Google Colab GPU server with robust error handling."""
         import requests
+
+        # 1. Validate that the API URL is configured
+        if not self.config.api_url or not self.config.api_url.strip():
+            raise ValueError(
+                "Missing EARTHDIAL_API_URL: The 'remote' backend requires the 'EARTHDIAL_API_URL' "
+                "environment variable to be set to your running Google Colab server URL "
+                "(e.g., https://xxxx.trycloudflare.com). "
+                "Please run the Colab notebook 'm1_earthdial/colab/EarthDial_Colab_Inference_Server.ipynb', "
+                "copy the public tunnel URL, and set: $env:EARTHDIAL_API_URL='<url>'"
+            )
 
         api_url = self.config.api_url.rstrip("/") + "/analyze"
 
-        # Encode image as base64 for reliable REST transport
+        # 2. Encode image as base64 for reliable REST transport
         with open(image_path, "rb") as f:
             image_b64 = base64.b64encode(f.read()).decode("utf-8")
 
@@ -155,25 +187,51 @@ class EarthDialAdapter:
             "max_new_tokens": req.max_new_tokens
         }
 
+        # 3. Transmit HTTP request with clear error handling
         try:
             response = requests.post(api_url, json=payload, timeout=self.config.timeout_seconds)
         except requests.exceptions.ConnectionError as e:
             raise ConnectionError(
-                f"Could not connect to EarthDial GPU server at {self.config.api_url}. "
-                "Ensure that the Google Colab server notebook is running and EARTHDIAL_API_URL is set."
+                f"Unreachable Colab server: Could not connect to EarthDial server at '{self.config.api_url}'. "
+                f"Ensure that the Google Colab server notebook is active, cell 5 is running, and your tunnel URL is correct."
             ) from e
         except requests.exceptions.Timeout as e:
             raise TimeoutError(
-                f"Request to EarthDial GPU server timed out after {self.config.timeout_seconds} seconds."
+                f"Request timed out: EarthDial remote server at '{self.config.api_url}' did not respond "
+                f"within {self.config.timeout_seconds} seconds. EarthDial inference on Colab might still be generating "
+                f"or the tunnel is congested."
             ) from e
+        except Exception as e:
+            raise RuntimeError(f"Network error communicating with EarthDial remote server: {str(e)}") from e
 
+        # 4. Check HTTP status code
         if response.status_code != 200:
+            try:
+                err_json = response.json()
+                detail = err_json.get("detail") or err_json.get("error") or response.text
+            except Exception:
+                detail = response.text[:300]
             raise RuntimeError(
-                f"Remote EarthDial server returned error {response.status_code}: {response.text}"
+                f"Server-side EarthDial error (HTTP {response.status_code}): {detail}"
             )
 
-        data = response.json()
-        return str(data.get("answer", "")).strip()
+        # 5. Parse and validate JSON structure
+        try:
+            data = response.json()
+        except Exception as e:
+            raise RuntimeError(
+                f"Invalid API response: EarthDial remote server returned non-JSON data (HTTP {response.status_code}). "
+                f"Response preview: {response.text[:200]}"
+            ) from e
+
+        if not isinstance(data, dict) or "answer" not in data:
+            received = list(data.keys()) if isinstance(data, dict) else type(data).__name__
+            raise RuntimeError(
+                f"Invalid API response: EarthDial response JSON is missing the required 'answer' key. "
+                f"Received fields: {received}"
+            )
+
+        return str(data["answer"]).strip()
 
     def _infer_mock(self, img_meta: dict, question: str) -> str:
         """Simulates domain-accurate Earth observation responses for offline testing."""
@@ -212,6 +270,7 @@ class EarthDialAdapter:
     ) -> ImageVQAResponse:
         """
         Processes a satellite image and natural-language question, returning a structured response.
+        Never silently falls back to mock if remote inference fails.
         """
         start_time = time.perf_counter()
 
@@ -320,6 +379,34 @@ class EarthDialAdapter:
                 error=f"Inference execution failed on backend '{backend_used}': {str(e)}"
             )
 
+    # ------------------------------------------------------------------------
+    # M4 Specialist Integration Interfaces
+    # ------------------------------------------------------------------------
+    def execute(self, image_paths: Any, params: Optional[Dict[str, Any]] = None) -> ImageVQAResponse:
+        """
+        Specialist execution method for M4 ToolRegistry integration.
+        Called by app.adapters.m1_vqa_adapter.invoke_specialist(specialist, image_paths=..., params=...).
+        """
+        params = params or {}
+        if not image_paths:
+            raise ValueError("VQA requires at least one image path.")
+        
+        first_image = str(image_paths[0])
+        query = params.get("query") or params.get("target") or "Describe this satellite image."
+        return self.analyze(
+            image_path=first_image,
+            question=query,
+            num_beams=params.get("num_beams"),
+            temperature=params.get("temperature"),
+            max_new_tokens=params.get("max_new_tokens"),
+        )
+
+    def __call__(self, images: Any = None, target: Optional[str] = None, **kwargs: Any) -> ImageVQAResponse:
+        """Callable fallback interface matching M4 specialist(**fallback_kwargs)."""
+        image_list = images if isinstance(images, list) else ([images] if images else [])
+        params = {"query": target or "Describe this satellite image.", **kwargs}
+        return self.execute(image_paths=image_list, params=params)
+
 
 # Global adapter singleton
 _default_adapter: Optional[EarthDialAdapter] = None
@@ -374,4 +461,3 @@ def analyze_image(
     target_adapter = adapter or (get_adapter(config) if config else get_adapter())
     response = target_adapter.analyze(image_path=image_path, question=question, **kwargs)
     return response.to_dict()
-

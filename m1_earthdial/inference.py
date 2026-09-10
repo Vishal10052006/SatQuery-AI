@@ -34,13 +34,13 @@ def run_cli():
         type=str,
         default=os.getenv("EARTHDIAL_BACKEND", "auto"),
         choices=["auto", "remote", "direct", "mock"],
-        help="Inference backend to use"
+        help="Inference backend to use ('mock', 'remote', 'direct', or 'auto')"
     )
     parser.add_argument(
         "--api-url",
         type=str,
-        default=os.getenv("EARTHDIAL_API_URL", "http://localhost:8000"),
-        help="Remote Colab GPU server URL (used when backend is 'remote')"
+        default=os.getenv("EARTHDIAL_API_URL", ""),
+        help="Remote Colab GPU server URL (required when backend is 'remote', e.g. https://<tunnel>.trycloudflare.com)"
     )
     parser.add_argument(
         "--num-beams",
@@ -65,7 +65,7 @@ def run_cli():
 
     config = EarthDialConfig(
         backend=args.backend,
-        api_url=args.api_url,
+        api_url=args.api_url.strip(),
     )
     adapter = EarthDialAdapter(config=config)
 
@@ -106,4 +106,3 @@ def run_cli():
 
 if __name__ == "__main__":
     run_cli()
-

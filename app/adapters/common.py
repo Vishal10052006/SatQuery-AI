@@ -27,9 +27,8 @@ def convert_tool_output(
     """
 
     answer = getattr(raw_output, "answer", "")
-    confidence = float(
-        getattr(raw_output, "confidence", 0.0)
-    )
+    raw_conf = getattr(raw_output, "confidence", 0.0)
+    confidence = float(raw_conf) if raw_conf is not None else 0.0
 
     metrics = getattr(
         raw_output,
