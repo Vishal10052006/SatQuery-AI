@@ -1,211 +1,209 @@
-# M1 — EarthDial VLM (Visual Question Answering & Image Understanding)
+# M1 — EarthDial VLM
 
-Module **M1** of **SatQuery AI** provides deep Earth observation visual reasoning and natural language question answering over high-resolution satellite imagery using **EarthDial** (CVPR 2025).
+**SatQuery AI Module M1** is the visual-perception specialist for optical Earth-observation imagery. It accepts a satellite image plus a natural-language question, runs EarthDial VLM inference, and returns a stable structured response consumed by M4.
 
----
+## Definition of Done
 
-## 1. Overview
+M1 is complete when all of the following are true:
 
-Within the SatQuery AI system, **M1** functions as the primary visual perception engine for optical satellite imagery. When a user submits a natural-language query about a satellite scene, the **M4 Agent** dispatches the image and query to M1. M1 validates and preprocesses the image, feeds it to the **EarthDial VLM** (`EarthDial_4B_RGB`), and returns a standardized, structured JSON response containing the generated answer and verifiable evidence metadata.
+- [x] Image validation and corruption checks
+- [x] RGB normalization and image metadata extraction
+- [x] EarthDial 4B model integration
+- [x] Direct CUDA backend
+- [x] Remote GPU backend
+- [x] Offline mock backend for CI/contract tests
+- [x] Stable Pydantic request/response contract
+- [x] Evidence metadata without fabricated confidence
+- [x] M4 callable `analyze_image()` interface
+- [x] CLI runner and JSON output
+- [x] Reusable FastAPI GPU inference server
+- [x] Colab T4 deployment notebook
+- [x] Unit/integration tests for local, error, and remote transport paths
+- [ ] Live EarthDial inference against an active T4 server — deployment/runtime gate
 
-### Pipeline
-
-```
-Satellite Image (.jpg, .png, .tif)
-         ↓
-Image Preprocessing & Validation
-         ↓
-   EarthDial VLM
-         ↓
-Natural Language Question
-         ↓
-Visual Question Answering (VQA) / Image Understanding
-         ↓
-Structured Result (JSON Schema)
-         ↓
-     M4 Agent
-```
+The last item is an operational verification step because model weights require a GPU and are not stored in this repository.
 
 ---
 
-## 2. Architecture & M4 Integration Flow
+## 1. M1 Responsibility
 
-```
-+-------------------------------------------------------------+
-|                         User Query                          |
-+-------------------------------------------------------------+
-                              │
-                              ▼
-+-------------------------------------------------------------+
-|                          M4 Agent                           |
-|       (Orchestrator / Planning & Task Delegation)           |
-+-------------------------------------------------------------+
-                              │  analyze_image(img, question)
-                              ▼
-+-------------------------------------------------------------+
-|                     M1 EarthDial Module                     |
-|  - Preprocessing & format validation                        |
-|  - Resolution and channel normalization                     |
-|  - Backend routing (Direct GPU / Remote Colab / Mock)       |
-+-------------------------------------------------------------+
-                              │  Tensor / Base64 Payload
-                              ▼
-+-------------------------------------------------------------+
-|                   EarthDial 4B VLM Engine                   |
-|  - Model: akshaydudhane/EarthDial_4B_RGB                    |
-|  - Architecture: InternVLChatModel                          |
-|  - Autoregressive Chat Inference                            |
-+-------------------------------------------------------------+
-                              │  Raw Text Response
-                              ▼
-+-------------------------------------------------------------+
-|                      Structured Result                      |
-|  - task: "image_vqa"                                        |
-|  - answer: Generated text                                   |
-|  - confidence: null (not fabricated)                        |
-|  - evidence: { path, size, format, model, time }           |
-+-------------------------------------------------------------+
-                              │
-                              ▼
-+-------------------------------------------------------------+
-|                          M4 Agent                           |
-|             (Synthesizes Final Response to User)            |
-+-------------------------------------------------------------+
+```text
+Satellite Image + Question
+          ↓
+Image validation / preprocessing
+          ↓
+EarthDial 4B VLM
+          ↓
+Visual Question Answering
+          ↓
+Structured M1 Response
+          ↓
+M4 Agent
 ```
 
----
+### Supported tasks
 
-## 3. Supported Tasks & Scope Boundaries
+- Visual Question Answering (VQA)
+- Scene description
+- Land-cover understanding
+- Roads, buildings and infrastructure questions
+- Water bodies, rivers, lakes and coastlines
+- General optical satellite-scene understanding
 
-### Supported Tasks in M1
-- **Visual Question Answering (VQA)**: e.g. *"What can you see in this satellite image?"*
-- **Scene Description**: e.g. *"Describe the major features visible in this scene."*
-- **Earth Observation Understanding**:
-  - Land cover categorization (agricultural, forest, barren, urban).
-  - Infrastructure & object detection queries (presence of roads, buildings, runways).
-  - Hydrological presence queries (water bodies, rivers, lakes, coastlines).
+### Explicitly outside M1
 
-### M1 Scope Boundaries
-- **M1 IS NOT responsible for**: Change detection, SAR radar processing, optical-SAR fusion, GIS polygon/shapefile creation, geospatial coordinate reprojection, or multi-agent orchestration. Those tasks are strictly relegated to other SatQuery AI modules.
+M1 does **not** perform change detection, SAR processing, optical-SAR fusion, GIS polygon creation, coordinate reprojection, or multi-agent orchestration. Those capabilities belong to other modules.
 
 ---
 
-## 4. Hardware & GPU Requirements
+## 2. Model
 
-EarthDial is a 4.15-billion parameter Vision-Language Model requiring substantial VRAM for weight loading and activation tensors:
+Checkpoint:
 
-| Execution Mode | Weights Precision | Minimum GPU VRAM | Recommended Device |
-|---|---|---|---|
-| **Direct Full Precision** | bfloat16 / float16 | **10 – 12 GB** | NVIDIA T4 (16GB), V100, A10, A100 |
-| **Direct Quantized** | 4-bit / 8-bit (bitsandbytes) | **5 – 6 GB** | NVIDIA RTX 3060/4060 (CUDA only) |
-| **Remote Colab GPU** | bfloat16 | **16 GB (Cloud)** | Free Google Colab T4 GPU |
-| **Local CPU (Non-GPU)** | - | *Not Feasible* | OOM crash; requires Remote Colab |
+```text
+akshaydudhane/EarthDial_4B_RGB
+```
 
-> **Note on Local Execution:** Machines without a dedicated NVIDIA CUDA GPU (such as integrated AMD Radeon or Intel Iris graphics with 8 GB system RAM) cannot load the 8.3 GB model weights into memory. For such machines, M1 provides a seamless **Remote Colab GPU Backend**.
+EarthDial is a 4B-class vision-language model. The weights are downloaded by the GPU environment at runtime and are intentionally not committed to Git.
 
 ---
 
-## 5. Installation
+## 3. Architecture
 
-### 5.1 Local Client Setup (Lightweight)
-On your local development machine, install the lightweight client requirements (Pydantic, Pillow, Requests):
+```text
+                     M4 Agent
+                         │
+                  analyze_image()
+                         │
+                         ▼
+                 ┌───────────────┐
+                 │ M1 EarthDial  │
+                 │   Adapter     │
+                 └───────┬───────┘
+                         │
+              ┌──────────┼──────────┐
+              │          │          │
+              ▼          ▼          ▼
+          Direct GPU   Remote GPU   Mock
+              │          │          │
+              └──────────┼──────────┘
+                         ▼
+                  Structured JSON
+                         │
+                         ▼
+                         M4
+```
+
+### Backend behavior
+
+| Backend | Purpose | Real model? |
+|---|---|---:|
+| `direct` | Local CUDA workstation with sufficient VRAM | ✅ |
+| `remote` | Local lightweight client → Colab/T4 or GPU server | ✅ |
+| `mock` | Offline tests and CI | ❌ |
+| `auto` | Direct CUDA → healthy remote → mock | Depends on availability |
+
+**Important:** `mock` is never the production EarthDial path. It exists so the M1/M4 contract can be tested without downloading model weights.
+
+---
+
+## 4. Remote T4 Deployment
+
+For a laptop without enough VRAM, use the included notebook:
+
+```text
+m1_earthdial/colab/EarthDial_Colab_Inference_Server.ipynb
+```
+
+### Colab
+
+1. Open the notebook in Google Colab.
+2. Select **Runtime → Change runtime type → T4 GPU**.
+3. Run the installation and model-loading cells.
+4. Start the FastAPI server and Cloudflare tunnel.
+5. Copy the generated `trycloudflare.com` URL.
+
+The reusable server is also available as:
+
+```text
+m1_earthdial/server.py
+```
+
+For a normal CUDA host:
 
 ```bash
-# Using Python 3.10 - 3.12
-python -m venv .venv
-
-# Activate virtual environment
-# Windows (PowerShell):
-.\.venv\Scripts\Activate.ps1
-# Linux / macOS:
-source .venv/bin/activate
-
-# Install M1 client dependencies
-pip install -r m1_earthdial/requirements.txt
+python -m m1_earthdial.server
 ```
 
-### 5.2 GPU Environment Setup (For Colab or Local CUDA Workstation)
-If running directly on a machine with a CUDA GPU:
+### Local client
+
+Linux/macOS:
 
 ```bash
-pip install -r m1_earthdial/requirements-gpu.txt
+export EARTHDIAL_BACKEND=remote
+export EARTHDIAL_API_URL="https://YOUR-TUNNEL.trycloudflare.com"
+```
+
+PowerShell:
+
+```powershell
+$env:EARTHDIAL_BACKEND="remote"
+$env:EARTHDIAL_API_URL="https://YOUR-TUNNEL.trycloudflare.com"
+```
+
+Verify the remote server first:
+
+```bash
+curl "$EARTHDIAL_API_URL/health"
+```
+
+Expected shape:
+
+```json
+{
+  "status": "ready",
+  "model": "akshaydudhane/EarthDial_4B_RGB",
+  "cuda": true,
+  "device": "Tesla T4"
+}
 ```
 
 ---
 
-## 6. Model Setup & Execution Backends
+## 5. M4 Integration Contract
 
-EarthDial weights are hosted on Hugging Face Hub:
-- Repository ID: [`akshaydudhane/EarthDial_4B_RGB`](https://huggingface.co/akshaydudhane/EarthDial_4B_RGB)
-- Size: ~8.29 GB (2 safetensors files)
-
-M1 features a **Dual-Backend Adapter** controlled via environment variable `EARTHDIAL_BACKEND`:
-
-### Option A: Free Google Colab T4 GPU (Recommended for non-GPU machines)
-1. Open the included notebook in Google Colab:
-   `m1_earthdial/colab/EarthDial_Colab_Inference_Server.ipynb`
-2. Set Runtime to **T4 GPU** (`Runtime` > `Change runtime type` > `T4 GPU`).
-3. Run all cells. The notebook will start the FastAPI model server and output a public URL (e.g. `https://xxxx.trycloudflare.com`).
-4. Set the environment variable on your local machine:
-   ```powershell
-   # PowerShell:
-   $env:EARTHDIAL_API_URL="https://xxxx.trycloudflare.com"
-   $env:EARTHDIAL_BACKEND="remote"
-   ```
-5. M1 now forwards inference queries to the Colab GPU transparently!
-
-### Option B: Direct Local GPU
-If your machine has a CUDA GPU with $\ge$10 GB VRAM:
-```powershell
-$env:EARTHDIAL_BACKEND="direct"
-```
-
-### Option C: Offline Mock Engine
-For offline contract testing or CI/CD pipelines without network or GPU:
-```powershell
-$env:EARTHDIAL_BACKEND="mock"
-```
-
----
-
-## 7. Python API (How M4 Calls M1)
-
-M4 can invoke M1 with a single function call:
+M4 calls exactly one public function:
 
 ```python
 from m1_earthdial import analyze_image
 
-# Invoke EarthDial analysis
 result = analyze_image(
     image_path="path/to/satellite_scene.jpg",
-    question="What are the dominant land cover types and major features visible in this scene?"
+    question="What are the dominant land cover types visible in this scene?",
 )
-
-# Access structured fields
-print("Answer:", result["answer"])
-print("Model:", result["model"])
-print("Evidence:", result["evidence"])
 ```
 
-### Structured Output Schema
+M1 returns:
+
 ```json
 {
   "task": "image_vqa",
-  "question": "What are the dominant land cover types and major features visible in this scene?",
-  "answer": "The image exhibits agricultural parcel divisions, a central meandering river channel, and a localized built-up urban cluster.",
+  "question": "What are the dominant land cover types visible in this scene?",
+  "answer": "<EarthDial generated answer>",
   "model": "EarthDial",
   "confidence": null,
   "evidence": {
-    "image_path": "C:\\Users\\...\\sample_satellite.jpg",
+    "image_path": "...",
     "image_format": "JPEG",
     "image_size": [512, 512],
     "model_name": "akshaydudhane/EarthDial_4B_RGB",
     "backend": "remote_colab",
     "inference_time_seconds": 1.42,
-    "timestamp": "2026-09-10T11:47:26.115835+00:00",
+    "timestamp": "...",
     "extra": {
       "num_beams": 5,
-      "temperature": 0.0
+      "temperature": 0.0,
+      "max_new_tokens": 128
     }
   },
   "success": true,
@@ -213,51 +211,129 @@ print("Evidence:", result["evidence"])
 }
 ```
 
-### Confidence Handling Notice
-EarthDial generates textual answers autoregressively. Token probabilities in generative open-domain models do not correspond to calibrated semantic certainty. To maintain strict scientific integrity and avoid fabricating artificial scores, **`confidence` is strictly set to `null`**.
+### Confidence policy
+
+`confidence` is intentionally `null`. EarthDial's autoregressive token likelihoods are not treated as calibrated semantic confidence, so M1 does not fabricate a score.
 
 ---
 
-## 8. Command-Line Interface (CLI)
-
-Run inference directly from your terminal:
+## 6. CLI
 
 ```bash
-# Basic query
 python -m m1_earthdial.inference \
   --image m1_earthdial/examples/sample_satellite.jpg \
-  --question "What can you see in this satellite image?"
+  --question "What can you see in this satellite image?" \
+  --backend remote \
+  --api-url "$EARTHDIAL_API_URL"
+```
 
-# Custom output destination
+Save JSON:
+
+```bash
 python -m m1_earthdial.inference \
   --image m1_earthdial/examples/sample_satellite.jpg \
   --question "Are there any water bodies?" \
+  --backend remote \
+  --api-url "$EARTHDIAL_API_URL" \
   --output m1_earthdial/outputs/water_query.json
 ```
 
 ---
 
-## 9. Running Tests
+## 7. Tests
 
-Run the complete unit and integration test suite:
+Run the complete M1 test suite from the repository root:
 
 ```bash
-# Run all test modules
 python -m unittest discover -s m1_earthdial/tests -p "test_*.py" -v
+```
 
-# Run interactive 3-query demonstration
+Run the demonstration:
+
+```bash
 python m1_earthdial/tests/run_e2e_demo.py
+```
+
+The test suite covers:
+
+- general VQA
+- land-cover questions
+- water/river questions
+- missing images
+- invalid questions
+- JSON serialization
+- remote request payload construction
+- remote empty-answer rejection
+- backend validation
+
+The offline tests do not require EarthDial weights or CUDA.
+
+---
+
+## 8. Installation
+
+### Lightweight local client
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r m1_earthdial/requirements.txt
+```
+
+### GPU environment
+
+```bash
+pip install -r m1_earthdial/requirements-gpu.txt
 ```
 
 ---
 
-## 10. Troubleshooting
+## 9. Repository Layout
 
-| Symptom / Error | Cause | Fix |
-|---|---|---|
-| `ImagePreprocessingError: Image file not found` | The provided path does not exist. | Verify path using `Path(img_path).exists()`. Use absolute or relative paths from workspace root. |
-| `Unsupported image extension '.xyz'` | File extension not in supported list. | Supported extensions: `.jpg`, `.jpeg`, `.png`, `.tif`, `.tiff`, `.bmp`, `.webp`. Convert file first. |
-| `ConnectionError: Could not connect to EarthDial GPU server` | Remote Colab server is not running or URL is wrong. | Check that Colab notebook Step 5 is running, copy the `trycloudflare.com` URL, and set `$env:EARTHDIAL_API_URL`. |
-| `OutOfMemoryError: CUDA out of memory` | Local GPU VRAM < 10 GB. | Use Google Colab T4 GPU server or launch with `--load-in-8bit` / `--load-in-4bit`. |
-| `Torch not compiled with CUDA enabled` | Running direct GPU inference on CPU machine. | Switch backend to `remote` ($env:EARTHDIAL_BACKEND="remote") and run the Colab server. |
+```text
+m1_earthdial/
+├── README.md
+├── __init__.py
+├── config.py
+├── earthdial_adapter.py
+├── inference.py
+├── preprocessing.py
+├── schemas.py
+├── server.py
+├── requirements.txt
+├── requirements-gpu.txt
+├── colab/
+│   └── EarthDial_Colab_Inference_Server.ipynb
+├── examples/
+│   ├── generate_sample_image.py
+│   ├── sample_query.json
+│   └── sample_satellite.jpg
+└── tests/
+    ├── __init__.py
+    ├── run_e2e_demo.py
+    ├── test_inference.py
+    ├── test_preprocessing.py
+    └── test_schemas.py
+```
 
+## Final Runtime Gate
+
+The final deployment proof is:
+
+```text
+Local M4
+   ↓
+M1 analyze_image()
+   ↓
+Remote EarthDial API
+   ↓
+T4 GPU
+   ↓
+Real EarthDial answer
+   ↓
+M1 structured response
+   ↓
+M4 synthesis
+```
+
+Once `/health` reports `ready` and the CLI returns `success: true` with a real generated answer, M1 has passed the complete runtime DoD.
