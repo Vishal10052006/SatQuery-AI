@@ -91,6 +91,55 @@ def _convert_m2_output(raw_output: Any) -> ToolResult:
         "artifacts": artifacts,
     }
 
+    # -------------------------------------------------------------
+    # Preserve M2 input/output provenance for downstream M4 tools.
+    #
+    # Native M2 stores the original temporal image paths inside
+    # SpecialistResult.evidence. Promote them into the stable M4
+    # ToolResult contract so Grounding and M5 GIS can consume them.
+    # -------------------------------------------------------------
+    before_path = native_evidence.get("before")
+    after_path = native_evidence.get("after")
+
+    if before_path:
+        data["before"] = str(before_path)
+
+    if after_path:
+        data["after"] = str(after_path)
+
+    # M5 requires a reference raster. M2 uses the "after" observation
+    # as the reference image for downstream spatial interpretation.
+    if after_path:
+        data["reference_image"] = str(after_path)
+        data["reference_image_path"] = str(after_path)
+
+        # Preserve an explicit GeoTIFF alias only when the source
+        # itself is actually a GeoTIFF/TIFF.
+        if Path(str(after_path)).suffix.lower() in {".tif", ".tiff"}:
+            data["reference_geotiff"] = str(after_path)
+            data["reference_geotiff_path"] = str(after_path)
+
+    # Preserve M2-native spatial evidence.
+    if "change_mask" in native_evidence:
+        data["change_mask"] = native_evidence["change_mask"]
+
+    if "change_mask_path" in native_evidence:
+        data["change_mask_path"] = native_evidence["change_mask_path"]
+
+    if "regions" in native_evidence:
+        data["regions"] = native_evidence["regions"]
+
+    if "target" in native_evidence:
+        data["target"] = native_evidence["target"]
+
+    if "change_detected" in native_evidence:
+        data["change_detected"] = native_evidence["change_detected"]
+
+    if "geospatial_reference_available" in native_evidence:
+        data["geospatial_reference_available"] = (
+            native_evidence["geospatial_reference_available"]
+        )
+
     evidence: list[Evidence] = []
 
     if native_evidence:
