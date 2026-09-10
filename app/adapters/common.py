@@ -15,6 +15,26 @@ from app.query.schemas import (
 )
 
 
+def _normalize_external_status(
+    raw_status: Any,
+) -> ExecutionStatus:
+    """Map specialist-native status values to the M4 status enum."""
+    normalized = str(raw_status or "success").strip().lower()
+
+    if normalized in {"failed", "failure", "error"}:
+        return ExecutionStatus.FAILED
+
+    if normalized in {
+        "partial",
+        "awaiting_input",
+        "awaiting_model",
+        "incomplete",
+    }:
+        return ExecutionStatus.PARTIAL
+
+    return ExecutionStatus.SUCCESS
+
+
 def convert_tool_output(
     raw_output: Any,
     tool: ToolName,
@@ -22,14 +42,15 @@ def convert_tool_output(
     """
     Convert an external specialist ToolOutput into M4 ToolResult.
 
-    The external SatQuery specialists return ToolOutput objects,
-    while M4 operates on the stable ToolResult contract.
+    Native status/error fields are preserved so a specialist failure is
+    not incorrectly reported as a successful M4 step.
     """
 
     answer = getattr(raw_output, "answer", "")
     confidence = float(
         getattr(raw_output, "confidence", 0.0)
     )
+    confidence = max(0.0, min(1.0, confidence))
 
     metrics = getattr(
         raw_output,
@@ -43,9 +64,29 @@ def convert_tool_output(
         [],
     ) or []
 
+    native_status = getattr(
+        raw_output,
+        "status",
+        "success",
+    )
+    status = _normalize_external_status(native_status)
+
+    native_error = getattr(raw_output, "error", None)
+    native_message = getattr(raw_output, "message", None)
+    error = (
+        str(native_error)
+        if native_error
+        else (
+            str(native_message)
+            if status == ExecutionStatus.FAILED and native_message
+            else None
+        )
+    )
+
     data: dict[str, Any] = {
         "answer": answer,
         "metrics": metrics,
+        "native_status": str(native_status),
     }
 
     # Preserve geospatial mask output when available.
@@ -100,10 +141,11 @@ def convert_tool_output(
 
     return ToolResult(
         tool=tool,
-        status=ExecutionStatus.SUCCESS,
+        status=status,
         confidence=confidence,
         data=data,
         evidence=evidence,
+        error=error,
     )
 
 
@@ -118,17 +160,13 @@ def invoke_specialist(
     Invoke an external specialist through a stable compatibility boundary.
 
     Preferred interface:
-        specialist.execute(
-            image_paths=[...],
-            params={...},
-        )
+        specialist.execute(image_paths=[...], params={...})
 
     Compatibility interface:
         specialist(**fallback_kwargs)
 
-    This allows M4 to integrate both the structured specialist
-    classes supplied by teammates and lightweight callable
-    implementations used during testing/integration.
+    This supports both structured specialist classes and lightweight
+    callables used during testing/integration.
     """
 
     if hasattr(specialist, "execute") and callable(
