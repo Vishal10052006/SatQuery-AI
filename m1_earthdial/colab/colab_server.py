@@ -124,10 +124,7 @@ def analyze(req: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {str(e)}")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-
-    pixel_values = TRANSFORM(image).unsqueeze(0).to(device=device, dtype=dtype)
+    pixel_values = TRANSFORM(image).unsqueeze(0).to(device=MODEL.device, dtype=MODEL.dtype)
 
     generation_config = {
         "num_beams": req.num_beams,
@@ -138,6 +135,9 @@ def analyze(req: AnalyzeRequest):
     }
 
     try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         with torch.no_grad():
             answer = MODEL.chat(
                 tokenizer=TOKENIZER,
@@ -146,10 +146,14 @@ def analyze(req: AnalyzeRequest):
                 generation_config=generation_config,
                 verbose=False
             )
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         return AnalyzeResponse(
             answer=str(answer).strip(),
             model=MODEL_ID,
-            device=device
+            device=str(MODEL.device)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model inference failed: {str(e)}")
