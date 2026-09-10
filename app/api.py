@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agents.bootstrap import build_m4_controller
+from app.agents.bootstrap import build_m4_controller, build_production_controller
 from app.agents.controller import AgentController
 from app.query.schemas import AgentResponse, QueryRequest
 
@@ -35,9 +35,14 @@ class SatQueryAPI:
         from the supplied specialist implementations.
         """
 
-        self.controller = controller or build_m4_controller(
-            **specialists
-        )
+        if controller is not None:
+            self.controller = controller
+        elif specialists:
+            self.controller = build_m4_controller(
+                **specialists
+            )
+        else:
+            self.controller = build_production_controller()
 
     def ask(
         self,

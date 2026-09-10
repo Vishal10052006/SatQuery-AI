@@ -5,6 +5,8 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv-m1/
+.venv-satquery/
 venv/
 env/
 

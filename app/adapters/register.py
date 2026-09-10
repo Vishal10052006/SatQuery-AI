@@ -49,11 +49,17 @@ def register_specialists(
             build_change_detection_adapter(change_detection),
         )
 
-    if grounding is not None:
-        registry.register(
-            ToolName.M2_GROUNDING,
-            build_grounding_adapter(grounding),
-        )
+    # M2 grounding is natively integrated into this repository.
+    #
+    # When no external specialist is supplied, the adapter uses
+    # models.change.grounding.GroundingAdapter.
+    #
+    # An explicitly supplied `grounding` specialist remains supported
+    # for external integrations and compatibility tests.
+    registry.register(
+        ToolName.M2_GROUNDING,
+        build_grounding_adapter(grounding),
+    )
 
     if optical_sar is not None:
         registry.register(

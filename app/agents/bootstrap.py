@@ -1,11 +1,14 @@
 """
 M4 runtime bootstrap.
 
-This module creates the AgentController and injects whichever
-specialist implementations are available at runtime.
+This module provides two runtime construction paths:
 
-The specialists remain external to M4. M4 only knows their
-adapter/ToolResult contracts.
+1. build_m4_controller()
+   Dependency-injection builder used by tests and custom deployments.
+
+2. build_production_controller()
+   Production builder that wires the native SatQuery specialist
+   implementations into M4.
 """
 
 from __future__ import annotations
@@ -26,33 +29,11 @@ def build_m4_controller(
     gis: Any | None = None,
 ) -> AgentController:
     """
-    Build a fully configured M4 AgentController.
+    Build an M4 controller using explicitly supplied specialists.
 
-    Any specialist that is not available remains unregistered.
-    This allows M4 to start incrementally while teammates'
-    implementations are integrated.
-
-    Parameters
-    ----------
-    vqa:
-        Real M1/VQA specialist.
-
-    change_detection:
-        Real M2 change-detection specialist.
-
-    grounding:
-        Real M2 grounding specialist.
-
-    optical_sar:
-        Real M3 optical/SAR specialist.
-
-    gis:
-        Real M5 GIS/geospatial specialist.
-
-    Returns
-    -------
-    AgentController
-        Configured M4 controller.
+    This function intentionally does not discover or import native
+    specialists automatically. That preserves dependency injection,
+    partial integration, and deterministic testing.
     """
 
     registry = ToolRegistry()
@@ -68,4 +49,29 @@ def build_m4_controller(
 
     return AgentController(
         registry=registry,
+    )
+
+
+def build_production_controller() -> AgentController:
+    """
+    Build the production SatQuery controller.
+
+    Native specialist implementations are explicitly wired here.
+    The individual specialist adapters remain responsible for
+    converting native outputs into M4 ToolResult objects.
+
+    M2 grounding is intentionally not wired here yet because its
+    native interface still requires a dedicated M4 bridge.
+    """
+
+    from m1_earthdial.earthdial_adapter import analyze_image
+    from models.change.adapter import run_change_detection
+    from modules.optical_sar.pipeline import run_optical_sar_pipeline
+
+    return build_m4_controller(
+        vqa=analyze_image,
+        change_detection=run_change_detection,
+        optical_sar=run_optical_sar_pipeline,
+        # M5 is natively integrated by register_specialists().
+        gis=None,
     )

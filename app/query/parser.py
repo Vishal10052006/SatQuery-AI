@@ -115,6 +115,7 @@ class QueryParser:
         "water bodies",
         "water body",
         "vegetation",
+        "deforestation",
         "forest",
         "farmland",
         "agriculture",
@@ -335,17 +336,26 @@ class QueryParser:
     # --------------------------------------------------------
 
     def _extract_target(self, query: str) -> str | None:
-        """Extract the most relevant known satellite target."""
+        """Extract the most relevant known satellite target.
+
+        Targets are matched as complete words/phrases rather than
+        arbitrary substrings. This prevents false matches such as
+        ``forest`` inside ``deforestation``.
+        """
+
+        import re
 
         # Longer phrases must be checked first.
         ordered_targets = sorted(
-            self.TARGETS,
+            set(self.TARGETS),
             key=len,
             reverse=True,
         )
 
         for target in ordered_targets:
-            if target in query:
+            pattern = rf"(?<!\\w){re.escape(target)}(?!\\w)"
+
+            if re.search(pattern, query):
                 return target
 
         return None
