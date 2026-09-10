@@ -31,3 +31,10 @@ Thumbs.db
 # Generated outputs
 outputs/
 results/
+
+# Model checkpoints and weights
+checkpoints/
+*.safetensors
+*.pt
+*.bin
+scratch/
