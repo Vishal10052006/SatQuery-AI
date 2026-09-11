@@ -1,8 +1,6 @@
 """M4 deterministic response synthesis for specialist ToolResults."""
 from __future__ import annotations
 
-from typing import Any
-
 from app.agents.executor import ExecutionReport
 from app.query.schemas import AgentResponse, Evidence, ExecutionStatus, Intent, ToolResult
 
@@ -37,28 +35,36 @@ class ResponseSynthesizer:
                 target = data.get("target")
                 region_values = data.get("regions", [])
                 regions = len(region_values) if isinstance(region_values, list) else int(data.get("number_of_regions", 0))
-                detected = bool(data.get("change_detected", False))
-                # The backend can contain regions even when the legacy
-                # change_detected flag is false. Regions are the stronger
-                # evidence for the judge-facing conclusion.
-                if regions > 0:
-                    detected = True
+                detected = bool(data.get("change_detected", False)) or regions > 0
                 area = data.get("changed_area_sq_m")
+                changed_fraction = data.get("changed_fraction", data.get("change_fraction"))
                 quality = data.get("quality") or {}
                 water_excluded = any("water" in str(w).lower() for w in data.get("warnings", []))
+                detector = str(data.get("detector", data.get("model", "M2 change detector")))
+                baseline = "fallback" in detector.lower() or "baseline" in detector.lower()
 
                 subject = f" for '{target}'" if target else ""
                 if detected:
-                    answer = f"Detected {regions} meaningful change zone{'s' if regions != 1 else ''}{subject} between the supplied observations."
-                    if area is not None:
+                    if baseline:
+                        answer = f"Detected {regions} temporal difference zone{'s' if regions != 1 else ''}{subject} between the supplied observations."
+                    else:
+                        answer = f"Detected {regions} meaningful change zone{'s' if regions != 1 else ''}{subject} between the supplied observations."
+                    if area is not None and quality.get("georeferenced", False):
                         try:
                             hectares = float(area) / 10000.0
                             answer += f" Estimated changed surface is {hectares:.2f} ha."
                         except (TypeError, ValueError):
                             pass
+                    elif changed_fraction is not None:
+                        try:
+                            answer += f" The detected difference covers {float(changed_fraction) * 100:.2f}% of the image area."
+                        except (TypeError, ValueError):
+                            pass
                 else:
-                    answer = f"No significant change was detected{subject} between the supplied observations."
+                    answer = f"No temporal difference region was detected{subject} between the supplied observations."
 
+                if baseline:
+                    answer += " The current M2 fallback is a temporal image-difference baseline; it does not prove that every detected zone is a new building, road, or other semantic land-use change."
                 if water_excluded:
                     answer += " Persistent water signatures were excluded from land-change evidence to reduce river/lake boundary false positives."
                 if not quality.get("georeferenced", False):
@@ -67,7 +73,6 @@ class ResponseSynthesizer:
                     answer += " GIS enrichment is partial because geographic reference data is unavailable."
                 return answer
 
-        # For VQA/grounding/M3, use the specialist's actual natural-language result.
         preferred = ("answer", "summary", "description", "finding", "message", "result")
         messages: list[str] = []
         for result in results:
