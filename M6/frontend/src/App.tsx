@@ -69,11 +69,25 @@ const specialistFor = (result: AnalysisResponse | null, query: string) => {
 const confidenceLabel = (value: number): string => `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 const toFilePreview = (file: File): string => URL.createObjectURL(file);
 
-/** Keep native specialist scalar output visible instead of replacing it with frontend assumptions. */
 const displayValue = (value: unknown): string => {
   if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`;
   if (typeof value === 'object' && value !== null) return 'Structured output';
   return String(value);
+};
+
+const normalizeStatus = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+const statusLabel = (result: AnalysisResponse | null): string => {
+  const status = normalizeStatus(result?.status);
+  if (status === 'completed' || status === 'success') return 'SUCCESS';
+  if (status === 'partial' || status === 'degraded' || status === 'fallback_baseline') return 'DEGRADED';
+  if (status === 'error' || status === 'failed') return 'FAILED';
+  return 'PENDING';
+};
+const routeLabel = (result: AnalysisResponse | null, specialistId: string, demo: boolean): string => {
+  if (demo) return 'Demo response';
+  const tools = result?.toolResults ?? [];
+  if (tools.length === 0) return 'M4 response';
+  return `M4 → ${tools.map((item) => item.tool.replaceAll('_', ' ')).join(' → ')}`;
 };
 
 export const App: React.FC = () => {
@@ -104,6 +118,8 @@ export const App: React.FC = () => {
   const canAnalyze = Boolean(query.trim()) && Boolean(slot1.previewUrl) && (!needsPair || Boolean(slot2.previewUrl));
   const confidence = currentResult?.confidence ?? 0;
   const actualTool = currentResult?.toolResults?.[currentResult.toolResults.length - 1];
+  const resultStatus = normalizeStatus(currentResult?.status);
+  const badge = statusLabel(currentResult);
   const mapArtifact = currentResult?.artifactUrls?.find((url) => /\/map\.html(?:$|\?)/i.test(url));
   const geoJsonArtifact = currentResult?.artifactUrls?.find((url) => /\.geojson(?:$|\?)/i.test(url));
   const coordinates = currentResult?.coordinates;
@@ -116,6 +132,8 @@ export const App: React.FC = () => {
     const south = bbox?.south ?? lat - 0.08;
     const east = bbox?.east ?? lng + 0.12;
     const north = bbox?.north ?? lat + 0.08;
+    if (![lat, lng, west, south, east, north].every(Number.isFinite)) return undefined;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return undefined;
     return `https://www.openstreetmap.org/export/embed.html?bbox=${west},${south},${east},${north}&layer=mapnik&marker=${lat},${lng}`;
   }, [coordinates, currentResult?.boundingBox]);
 
@@ -156,7 +174,7 @@ export const App: React.FC = () => {
       setPipelineStage('evidence');
       setCurrentResult(result);
       setHistory((items) => [result, ...items].slice(0, 8));
-      setPipelineStage('completed');
+      setPipelineStage(result.status === 'error' ? 'error' : 'completed');
     } catch (error) {
       setPipelineStage('error');
       setErrorMessage(error instanceof Error ? error.message : 'Analysis pipeline failed.');
@@ -179,6 +197,12 @@ export const App: React.FC = () => {
   const sourceImages = needsPair
     ? [{ label: specialist.id === 'M3' ? 'OPTICAL' : 'BEFORE', src: slot1.previewUrl }, { label: specialist.id === 'M3' ? 'SAR' : 'AFTER', src: slot2.previewUrl }]
     : [{ label: 'SATELLITE IMAGE', src: slot1.previewUrl }];
+
+  const trace = currentResult?.reasoningSteps?.length
+    ? currentResult.reasoningSteps
+    : actualTool
+      ? [`${actualTool.tool.replaceAll('_', ' ')} → ${actualTool.status}`]
+      : [];
 
   return (
     <div className="app-shell">
@@ -219,20 +243,20 @@ export const App: React.FC = () => {
         </section>
 
         {currentResult && <>
-          <section className="result-header"><div><p className="overline">04 · RESULT</p><h2>Analysis result</h2></div><div className="result-meta"><span><Database size={13} /> {isDemoMode ? 'Demo response' : 'M5 / M4 response'}</span>{currentResult.executionTimeMs != null && <span>{currentResult.executionTimeMs} ms</span>}</div></section>
+          <section className="result-header"><div><p className="overline">04 · RESULT</p><h2>Analysis result</h2></div><div className="result-meta"><span><Database size={13} /> {routeLabel(currentResult, specialist.id, isDemoMode)}</span>{currentResult.executionTimeMs != null && <span>{currentResult.executionTimeMs} ms</span>}</div></section>
 
           <section className="result-grid">
-            <article className="answer-card"><div className="card-label"><Sparkles size={14} /> AI finding <span>SUCCESS</span></div><p className="answer">{currentResult.answer}</p><div className="confidence-row"><div><small>Operational confidence</small><div className="confidence-track"><span style={{ width: `${confidence * 100}%` }} /></div></div><strong>{confidenceLabel(confidence)}</strong></div>{currentResult.modelUsed && <p className="model"><Database size={12} /> {currentResult.modelUsed}</p>}</article>
-            <article className="specialist-card"><div className="card-label"><Network size={14} /> M4 routing</div><div className="selected-specialist"><span className="specialist-orb"><Radar size={17} /></span><div><small>Selected specialist</small><strong>{specialist.id} · {specialist.name}</strong><p>{specialist.reason}</p></div></div><div className="routing-line"><span>Last tool</span><strong>{actualTool?.tool?.replaceAll('_', ' ').toUpperCase() ?? specialist.id}</strong></div><div className="routing-line"><span>Tool status</span><strong>{actualTool?.status?.toUpperCase() ?? 'SUCCESS'}</strong></div></article>
+            <article className="answer-card"><div className="card-label"><Sparkles size={14} /> AI finding <span className={`result-badge ${badge.toLowerCase()}`}>{badge}</span></div><p className="answer">{currentResult.answer || (resultStatus === 'error' ? currentResult.error || 'Analysis failed.' : 'Analysis completed.')}</p><div className="confidence-row"><div><small>Operational confidence</small><div className="confidence-track"><span style={{ width: `${confidence * 100}%` }} /></div></div><strong>{confidenceLabel(confidence)}</strong></div>{currentResult.modelUsed && <p className="model"><Database size={12} /> {currentResult.modelUsed}</p>}</article>
+            <article className="specialist-card"><div className="card-label"><Network size={14} /> M4 routing</div><div className="selected-specialist"><span className="specialist-orb"><Radar size={17} /></span><div><small>Selected specialist</small><strong>{specialist.id} · {specialist.name}</strong><p>{specialist.reason}</p></div></div><div className="routing-line"><span>Last tool</span><strong>{actualTool?.tool?.replaceAll('_', ' ').toUpperCase() ?? specialist.id}</strong></div><div className="routing-line"><span>Tool status</span><strong>{actualTool?.status?.toUpperCase() ?? badge}</strong></div></article>
           </section>
 
           {scalarData.length > 0 && <section className="native-data"><div className="section-heading"><div><p className="overline">NATIVE OUTPUT</p><h3>What the specialist actually returned</h3></div><span>M4 ToolResult</span></div><div className="metric-row">{scalarData.map(([key, value]) => <div className="metric" key={key}><small>{key.replaceAll('_', ' ')}</small><strong>{displayValue(value)}</strong></div>)}</div></section>}
 
           <section className="evidence-section"><div className="section-heading"><div><p className="overline">05 · EVIDENCE</p><h3>Source imagery & generated artifacts</h3></div><span>{currentResult.artifactUrls?.length ?? 0} backend artifact(s)</span></div><div className="evidence-grid">{sourceImages.map((image) => <EvidenceImage key={image.label} label={image.label} src={image.src} />)}{currentResult.artifactUrls?.filter((url) => /\.(png|jpe?g|webp|tiff?)($|\?)/i.test(url)).map((url) => <EvidenceImage key={url} label="GENERATED ARTIFACT" src={url} artifact />)}</div>{currentResult.artifactUrls && currentResult.artifactUrls.length > 0 && <div className="artifact-links">{currentResult.artifactUrls.map((url) => <a href={url} target="_blank" rel="noreferrer" key={url}><Layers3 size={13} /> {url.split('/').pop()} <ArrowUpRight size={12} /></a>)}</div>}{currentResult.evidence.length > 0 && <div className="evidence-list">{currentResult.evidence.slice(0, 6).map((item) => <div key={item.id}><span>{item.label}</span><small>{item.description}</small><strong>{confidenceLabel(item.confidence)}</strong></div>)}</div>}</section>
 
-          <section className="geo-section"><div className="section-heading"><div><p className="overline">06 · GEOSPATIAL</p><h3>Geospatial evidence</h3></div><span>{mapArtifact || coordinates ? 'AVAILABLE' : 'NOT RETURNED'}</span></div>{mapArtifact ? <div className="map-wrap"><iframe src={mapArtifact} title="M5 generated geospatial evidence" loading="lazy" /></div> : externalMapUrl ? <div className="map-wrap"><iframe src={externalMapUrl} title="Geospatial evidence map" loading="lazy" /></div> : <div className="geo-empty"><MapPin size={19} /><div><strong>No geospatial reference was returned.</strong><p>This is intentionally not simulated. Ask for “where” or “regions”, or upload a georeferenced GeoTIFF so M4 can invoke grounding + M5 GIS.</p></div></div>}{coordinates && <div className="geo-meta"><span><MapPin size={12} /> {coordinates.locationName ?? 'Analysis location'}</span><strong>{coordinates.lat.toFixed(5)}, {coordinates.lng.toFixed(5)}</strong><small>{coordinates.crs ?? 'EPSG:4326'}</small>{geoJsonArtifact && <a href={geoJsonArtifact} target="_blank" rel="noreferrer">GeoJSON <ArrowUpRight size={11} /></a>}</div>}</section>
+          <section className="geo-section"><div className="section-heading"><div><p className="overline">06 · GEOSPATIAL</p><h3>Geospatial evidence</h3></div><span>{mapArtifact || externalMapUrl ? 'AVAILABLE' : 'NOT RETURNED'}</span></div>{mapArtifact ? <div className="map-wrap"><iframe src={mapArtifact} title="M5 generated geospatial evidence" loading="lazy" /></div> : externalMapUrl ? <div className="map-wrap"><iframe src={externalMapUrl} title="Geospatial evidence map" loading="lazy" /></div> : <div className="geo-empty"><MapPin size={19} /><div><strong>No geospatial reference was returned.</strong><p>This is intentionally not simulated. Ask for “where” or “regions”, or upload a georeferenced GeoTIFF so M4 can invoke grounding + M5 GIS.</p></div></div>}{coordinates && <div className="geo-meta"><span><MapPin size={12} /> {coordinates.locationName ?? 'Analysis location'}</span><strong>{coordinates.lat.toFixed(5)}, {coordinates.lng.toFixed(5)}</strong><small>{coordinates.crs ?? 'EPSG:4326'}</small>{geoJsonArtifact && <a href={geoJsonArtifact} target="_blank" rel="noreferrer">GeoJSON <ArrowUpRight size={11} /></a>}</div>}</section>
 
-          <section className="trace-section"><div className="section-heading"><div><p className="overline">07 · PROVENANCE</p><h3>Execution trace</h3></div></div><div className="trace-list">{(currentResult.reasoningSteps.length > 0 ? currentResult.reasoningSteps : ['Query parsed', `${specialist.id} selected by M4`, 'Specialist executed', 'Response synthesized']).map((step) => <div key={step}><Check size={14} /> {step}</div>)}</div></section>
+          <section className="trace-section"><div className="section-heading"><div><p className="overline">07 · PROVENANCE</p><h3>Execution trace</h3></div></div><div className="trace-list">{trace.map((step) => <div key={step}><Check size={14} /> {step}</div>)}</div></section>
         </>}
 
         <section className="specialist-status"><div><p className="overline">SYSTEM</p><h3>Specialist status</h3></div><div className="specialist-list">{SPECIALISTS.map((item) => <div className={item.id === specialist.id ? 'selected' : ''} key={item.id}><span><i />{item.id}</span><strong>{item.name}</strong><small>{item.role}</small></div>)}</div></section>
