@@ -14,7 +14,8 @@ class EarthDialConfig:
 
     # Execution backend: 'auto', 'remote', 'direct', or 'mock'.
     # 'auto' prefers a local CUDA GPU, then a reachable remote server.
-    # It never silently falls back to mock inference; mock must be explicit.
+    # If neither is available, auto mode uses the deterministic mock backend
+    # so local development and CI remain usable without a GPU.
     backend: str = os.getenv("EARTHDIAL_BACKEND", "auto").lower()
 
     # Remote server URL (Google Colab FastAPI / ngrok endpoint)
