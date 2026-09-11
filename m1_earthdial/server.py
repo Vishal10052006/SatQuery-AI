@@ -48,6 +48,17 @@ class AnalyzeRequest(BaseModel):
     max_new_tokens: int = Field(default=128, ge=1, le=512)
 
 
+if not torch.cuda.is_available():
+    raise RuntimeError(
+        "M1 EarthDial server requires a CUDA GPU. Start this service on a "
+        "GPU runtime such as Google Colab T4/A100."
+    )
+
+# EarthDial publishes BF16 weights. Use FP16 on CUDA devices without BF16 support.
+MODEL_DTYPE = torch.bfloat16
+if hasattr(torch.cuda, "is_bf16_supported") and not torch.cuda.is_bf16_supported():
+    MODEL_DTYPE = torch.float16
+
 # Load once at process startup so every request reuses the same model.
 print(f"[M1] Loading EarthDial checkpoint: {MODEL_ID}")
 tokenizer = AutoTokenizer.from_pretrained(
@@ -58,7 +69,7 @@ tokenizer = AutoTokenizer.from_pretrained(
 model = AutoModel.from_pretrained(
     MODEL_ID,
     low_cpu_mem_usage=True,
-    torch_dtype=torch.bfloat16,
+    torch_dtype=MODEL_DTYPE,
     device_map="auto",
     trust_remote_code=True,
 ).eval()
@@ -79,7 +90,7 @@ transform = transforms.Compose([
     ),
 ])
 
-print("[M1] EarthDial model loaded successfully.")
+print(f"[M1] EarthDial model loaded successfully using {MODEL_DTYPE}.")
 
 
 @app.get("/health")
@@ -90,6 +101,7 @@ def health():
         "model": MODEL_ID,
         "cuda": torch.cuda.is_available(),
         "device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        "dtype": str(MODEL_DTYPE),
     }
 
 
@@ -106,10 +118,7 @@ def analyze(request: AnalyzeRequest):
     if len(question) < 2:
         raise HTTPException(status_code=422, detail="Question must contain at least 2 characters.")
 
-    if not torch.cuda.is_available():
-        raise HTTPException(status_code=503, detail="EarthDial server requires CUDA GPU.")
-
-    pixel_values = transform(image).unsqueeze(0).cuda().to(torch.bfloat16)
+    pixel_values = transform(image).unsqueeze(0).cuda().to(MODEL_DTYPE)
     generation_config = {
         "num_beams": request.num_beams,
         "max_new_tokens": request.max_new_tokens,
