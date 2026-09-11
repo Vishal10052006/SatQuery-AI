@@ -33,8 +33,6 @@ def _convert_m2_output(raw_output: Any) -> ToolResult:
     elif native_status in {"awaiting_model", "awaiting_input"}:
         status = ExecutionStatus.PARTIAL
     else:
-        # fallback_baseline is an operationally usable M2 result; preserve the
-        # native status in data so the UI can explain the scientific limitation.
         status = ExecutionStatus.SUCCESS
 
     data: dict[str, Any] = {
@@ -46,9 +44,6 @@ def _convert_m2_output(raw_output: Any) -> ToolResult:
         "artifacts": artifacts,
     }
 
-    # Promote the complete M2 evidence payload into the stable top-level data
-    # contract. Previously only a subset was copied, which caused M6 to see
-    # zero regions / no area even when M2 had produced valid measurements.
     if isinstance(native_evidence, dict):
         for key in (
             "target",
@@ -68,6 +63,7 @@ def _convert_m2_output(raw_output: Any) -> ToolResult:
             "crs",
             "transform",
             "geographic_bbox",
+            "total_area_sq_m",
             "changed_area_sq_m",
             "change_mask",
             "change_mask_path",
