@@ -1,14 +1,9 @@
 """
 M4 adapter for the native M2 bi-temporal grounding subsystem.
 
-M4 owns the stable ToolResult contract.
-M2 owns the native grounding implementation.
-
-The adapter preserves upstream M2 provenance, including generated visual
-artifacts, so the next M5 stage and the M6 judge UI can consume the actual
-change evidence rather than losing it between orchestration steps.
+M4 owns the stable ToolResult contract. M2 owns the native grounding implementation.
+The adapter preserves upstream M2 provenance and generated visual artifacts.
 """
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,13 +19,11 @@ def _change_regions_from_result(previous_result: ToolResult | None) -> list[Chan
     """Reconstruct native M2 ChangeRegion objects from a previous result."""
     if previous_result is None:
         return []
-
     data = previous_result.data or {}
     raw_regions = data.get("regions", [])
     if not isinstance(raw_regions, list):
         evidence_data = data.get("evidence", {})
         raw_regions = evidence_data.get("regions", []) if isinstance(evidence_data, dict) else []
-
     if not isinstance(raw_regions, list):
         return []
 
@@ -39,32 +32,29 @@ def _change_regions_from_result(previous_result: ToolResult | None) -> list[Chan
         if not isinstance(raw, dict):
             continue
         try:
-            regions.append(
-                ChangeRegion(
-                    region_id=int(raw["region_id"]),
-                    pixel_count=int(raw["pixel_count"]),
-                    bbox_pixel={
-                        "xmin": int(raw["bbox_pixel"]["xmin"]),
-                        "ymin": int(raw["bbox_pixel"]["ymin"]),
-                        "xmax": int(raw["bbox_pixel"]["xmax"]),
-                        "ymax": int(raw["bbox_pixel"]["ymax"]),
-                    },
-                    centroid_pixel={
-                        "x": float(raw["centroid_pixel"]["x"]),
-                        "y": float(raw["centroid_pixel"]["y"]),
-                    },
-                    polygon_pixel=[[int(point[0]), int(point[1])] for point in raw["polygon_pixel"]],
-                    confidence=float(raw.get("confidence", 0.0)),
-                    bbox_geo=raw.get("bbox_geo"),
-                    centroid_geo=raw.get("centroid_geo"),
-                    polygon_geo=raw.get("polygon_geo"),
-                    area_sq_m=raw.get("area_sq_m"),
-                    target=raw.get("target"),
-                )
-            )
+            regions.append(ChangeRegion(
+                region_id=int(raw["region_id"]),
+                pixel_count=int(raw["pixel_count"]),
+                bbox_pixel={
+                    "xmin": int(raw["bbox_pixel"]["xmin"]),
+                    "ymin": int(raw["bbox_pixel"]["ymin"]),
+                    "xmax": int(raw["bbox_pixel"]["xmax"]),
+                    "ymax": int(raw["bbox_pixel"]["ymax"]),
+                },
+                centroid_pixel={
+                    "x": float(raw["centroid_pixel"]["x"]),
+                    "y": float(raw["centroid_pixel"]["y"]),
+                },
+                polygon_pixel=[[int(point[0]), int(point[1])] for point in raw["polygon_pixel"]],
+                confidence=float(raw.get("confidence", 0.0)),
+                bbox_geo=raw.get("bbox_geo"),
+                centroid_geo=raw.get("centroid_geo"),
+                polygon_geo=raw.get("polygon_geo"),
+                area_sq_m=raw.get("area_sq_m"),
+                target=raw.get("target"),
+            ))
         except (KeyError, TypeError, ValueError):
             continue
-
     return regions
 
 
@@ -112,8 +102,7 @@ def _convert_grounding_output(raw_output: Any, previous_result: ToolResult | Non
         "evidence": raw_output.to_dict() if hasattr(raw_output, "to_dict") else {},
     }
 
-    # Preserve every upstream field needed by M5 and M6. In particular,
-    # generated M2 overlay/mask/composite files must survive this step.
+    # Preserve every upstream field needed by M5 and M6.
     if previous_result is not None:
         upstream = previous_result.data or {}
         provenance_keys = (
@@ -122,30 +111,26 @@ def _convert_grounding_output(raw_output: Any, previous_result: ToolResult | Non
             "change_mask", "change_mask_path", "overlay_path", "mask_path", "composite_path",
             "artifacts", "artifact_paths", "bounding_boxes", "bounding_boxes_pixel", "regions",
             "change_detected", "geospatial_reference_available", "crs", "transform", "geographic_bbox",
+            "changed_area_sq_m", "quality", "warnings", "target",
         )
         for key in provenance_keys:
             value = upstream.get(key)
             if value is not None:
                 data[key] = value
-
         data["upstream_tool"] = previous_result.tool.value
         data["upstream_status"] = previous_result.status.value
         data["upstream_data"] = dict(upstream)
-
         if boxes_pixel:
             data["bounding_boxes_pixel"] = boxes_pixel
         if boxes_geo:
             data["bounding_boxes"] = boxes_geo
 
-    evidence = [
-        Evidence(
-            type="grounding_evidence",
-            reference="m2_grounding",
-            description="Spatial grounding evidence returned by the native M2 grounding subsystem.",
-            metadata={"evidence_source": evidence_source},
-        )
-    ]
-
+    evidence = [Evidence(
+        type="grounding_evidence",
+        reference="m2_grounding",
+        description="Spatial grounding evidence returned by the native M2 grounding subsystem.",
+        metadata={"evidence_source": evidence_source},
+    )]
     return ToolResult(
         tool=ToolName.M2_GROUNDING,
         status=status,
@@ -161,15 +146,16 @@ def build_grounding_adapter(specialist: Any | None = None):
     native_grounding = GroundingAdapter()
 
     def execute(previous_result: ToolResult | None = None, images: Any = None, target: str | None = None, **kwargs: Any) -> ToolResult:
-        target_text = target or kwargs.get("query") or "Locate the requested objects."
+        # A change-detection plan has no object target. Never invent one.
+        # Prefer the upstream M2 target; otherwise describe the detected change itself.
+        upstream_target = previous_result.data.get("target") if previous_result is not None else None
+        target_text = target or upstream_target or "detected change regions"
 
         if specialist is None:
-            image_path = None
             if images:
                 image_path = str(images[0]) if isinstance(images, (list, tuple)) else str(images)
             else:
                 image_path = _previous_image_path(previous_result)
-
             raw_output = native_grounding.ground_target(
                 image_path=image_path,
                 target=target_text,
