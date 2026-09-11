@@ -7,32 +7,29 @@ User / M6 Frontend
         |
         v
 +-----------------------+
-| M6 Presentation Layer  |
-| Dashboard / GIS / UX   |
+| M6 Presentation Layer |
+| Dashboard / GIS / UX  |
 +-----------+-----------+
-            |
             | HTTP JSON / multipart
             v
 +-----------------------+
-| M5 Backend/API Layer   |
-| FastAPI / upload /     |
-| artifact serving       |
+| M5 FastAPI / API      |
+| upload / artifacts    |
 +-----------+-----------+
-            |
             v
 +-----------------------+
-| M4 Agentic Controller  |
-| Parser -> Classifier   |
-| -> Planner -> Executor |
-| -> Synthesizer         |
-+-----+---------+--------+
+| M4 Agentic Controller |
+| Parser -> Classifier  |
+| -> Planner -> Executor|
+| -> Synthesizer        |
++-----+---------+-------+
       |         |        \
       v         v         v
    +------+  +------+  +--------+
    |  M1  |  |  M2  |  |   M3   |
    | VQA  |  |Change|  |Optical |
    |Earth |  |+Ground| | + SAR  |
-   |Dial   |  | ing  |  |Fusion  |
+   |Dial  |  |ing   |  | Fusion |
    +------+  +---+--+  +---+----+
                   |          |
                   +----+-----+
@@ -43,15 +40,13 @@ User / M6 Frontend
                 | polygons /  |
                 | GeoJSON/map |
                 +------+------+ 
-                       |
                        v
                 +-------------+
                 | M4 Response |
                 | evidence +  |
-                | confidence +|
+                | confidence + |
                 | trace        |
                 +------+------+ 
-                       |
                        v
                   M6 rendering
 ```
@@ -72,7 +67,7 @@ Natural language query
         -> FastAPI / M6 frontend
 ```
 
-The planner currently supports these specialist routes:
+Supported specialist routes:
 
 - VQA: M4 -> M1
 - Change detection: M4 -> M2
@@ -82,30 +77,31 @@ The planner currently supports these specialist routes:
 
 ## 2. Module-by-module progress
 
-> Progress below is an engineering assessment from the current repository state, not a claim about individual people's identities or effort.
+> Progress is an engineering assessment of repository implementation. It is not a claim about individual identities or effort.
 
-| Module | Responsibility | Current implementation | Status | Main remaining work |
+| Module | Responsibility | Current implementation | Status | Remaining validation/work |
 |---|---|---|---|---|
-| **M1** | EarthDial / VQA | `m1_earthdial/` contains config, preprocessing, inference, server, adapter, examples and tests. A real M1->M4 integration test uses the supported offline backend. | **~90% — integrated** | Run/validate heavyweight real-model inference with the intended production weights/environment; improve deployment packaging if required. |
-| **M2** | Change detection + grounding | Native change pipeline and native grounding adapter are present. Real M2->M4 integration and multi-step M2->Grounding->M5 acceptance coverage exist. | **~95% — integrated** | Validate against real mission imagery and the final trained model(s); tune quality metrics for SIH demo scenarios. |
-| **M3** | Optical + SAR fusion | Optical/SAR pipeline, registration, fusion and model inference are present. Integration test exercises the real adapter and checks trained checkpoint inference. | **~90% — integrated** | Validate on final paired datasets, document model/checkpoint provenance, and verify GPU/CPU deployment expectations. |
-| **M4** | Agentic routing/orchestration | Parser, classifier, planner, executor, registry, adapters, synthesizer, public API and acceptance tests are present. | **~95% — core complete** | Keep contracts stable, strengthen end-to-end CI, and add observability/authentication for deployment. |
-| **M5** | GIS / geospatial evidence + API boundary | Native geospatial processing, CRS conversion, polygons, area, GeoJSON, Folium map and M4 adapter are implemented. FastAPI serves results and artifacts. | **~90% — integrated** | Harden production API, large-file handling, cleanup/retention, and final real-data validation. |
-| **M6** | Frontend / judge dashboard | React/Vite dashboard, image upload, VQA/change/Optical-SAR views, GIS/evidence panels, history, report and team architecture UI are present. | **~85% — demo-ready** | Finish live-backend contract alignment, CORS/dev deployment validation, frontend E2E coverage, and final presentation polish. |
+| **M1** | EarthDial / VQA | Config, preprocessing, inference server, adapter, examples and tests; real adapter contract exists. | **~90% — integrated** | Validate heavyweight EarthDial weights on intended GPU/runtime; deployment packaging. |
+| **M2** | Change detection + grounding | Validation, preprocessing, true geospatial reprojection, deterministic baseline, RCD adapter, region extraction, grounding and geospatial localization. | **~95% — integrated** | Validate final mission imagery/models and tune demo thresholds. |
+| **M3** | Optical + SAR fusion | Optical/SAR preprocessing, cloud masking, SAR calibration + linear-domain speckle filtering, terrain adapter, CRS reprojection, fine alignment, feature/early fusion, trained-weight-only inference, confidence. | **~95% — integrated/hardened** | Validate paired mission datasets, final trained checkpoint provenance and GPU/CPU deployment. |
+| **M4** | Agentic controller | Parser, classifier, planner, executor, registry, adapters, synthesizer, public API and acceptance tests. | **~95% — core complete** | Keep contracts stable; final end-to-end regression and deployment observability/auth. |
+| **M5** | GIS / geospatial evidence + API | Native geospatial processing, CRS conversion, polygons, area, GeoJSON, map artifacts, M4 adapter and FastAPI boundary. | **~90% — integrated** | Large-file handling, cleanup/retention, hardened production API, real-data validation. |
+| **M6** | Frontend / judge dashboard | React/Vite dashboard, uploads, VQA/change/Optical-SAR views, GIS/evidence, history/report/team UI, live API contract. | **~85% — demo-ready** | Final live-backend E2E validation, deployment/CORS checks and presentation polish. |
 
-## 3. What is actually proven today
+## 3. What is actually proven
 
-### Proven by repository tests
+### Proven by repository-level tests/contracts
 
-- M1 -> M4 real integration through the EarthDial adapter using the supported offline backend.
-- M2 -> M4 real change-detection integration using deterministic synthetic imagery.
-- M3 -> M4 real Optical/SAR adapter integration including trained checkpoint inference checks.
-- M5 -> M4 native GIS integration generating evidence JSON, GeoJSON and an interactive map.
-- M4 routing and multi-step orchestration with deterministic acceptance tests.
+- M1 -> M4 adapter/integration boundary.
+- M2 -> M4 deterministic change-detection integration and multi-step M2 -> Grounding -> GIS wiring.
+- M3 -> M4 native adapter path and model-wrapper architecture checks.
+- M5 -> M4 native GIS integration and evidence artifact generation.
+- M4 deterministic routing, planning, execution and synthesis.
+- M6 frontend lint/build workflow and FastAPI multipart contract tests.
 
-### Not yet equivalent to production validation
+### Not equivalent to production validation
 
-A passing contract/integration suite does **not** prove that a heavyweight model is available, GPU-compatible, accurate on the final SIH dataset, or operational under production load. Final model/data validation must still be performed in the intended runtime environment.
+A passing contract/integration suite does **not** prove that a heavyweight checkpoint is available, GPU-compatible, accurate on the final SIH dataset, or operational under production load. Final model/data validation must be performed in the intended runtime environment.
 
 ## 4. Judge-facing end-to-end workflow
 
@@ -153,10 +149,10 @@ SatQuery should be considered SIH-demo ready when all of these pass:
 2. M1 contract tests pass in CI.
 3. M6 frontend `lint` passes.
 4. M6 frontend `build` passes.
-5. FastAPI `/health` (and the M6-compatible health route) returns success.
-6. M6 Live mode can submit one real uploaded image and receives a structured M4 response.
-7. M6 Live mode can submit a before/after pair and returns M2 + M5 evidence/artifacts.
-8. M6 Live mode can submit Optical + SAR data and returns an M3 result.
+5. FastAPI `/health` and `/api/health` return success.
+6. M6 Live mode submits one real uploaded image and receives a structured M4 response.
+7. M6 Live mode submits a before/after pair and returns M2 + M5 evidence/artifacts.
+8. M6 Live mode submits Optical + SAR data and returns an M3 result.
 9. Generated GeoJSON/map/evidence artifacts are reachable from the browser.
 10. Demo Mode remains available as a deterministic offline fallback.
 
