@@ -356,7 +356,7 @@ def test_confidence_scoring():
 
     assert "sar" in conf_missing_sar.missing_modalities
     assert conf_missing_sar.score < conf_high.score
-    assert "missing modalities" in conf_missing_sar.notes
+    assert "missing modalities" in conf_missing_sar.notes.lower()
 
 
 # =====================================================================
