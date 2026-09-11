@@ -6,15 +6,11 @@ pixel geometry can be reported as ground geometry.
 from __future__ import annotations
 
 import math
-from typing import Iterable, Sequence, Tuple
+from typing import Iterable, Tuple
 
 
-def pixel_to_geo(
-    x: float,
-    y: float,
-    transform: Tuple[float, float, float, float, float, float],
-) -> tuple[float, float]:
-    """Apply GDAL six-parameter affine transform (no external dependency)."""
+def pixel_to_geo(x: float, y: float, transform: Tuple[float, float, float, float, float, float]) -> tuple[float, float]:
+    """Apply GDAL six-parameter affine transform."""
     a, b, c, d, e, f = transform
     return (round(a * x + b * y + c, 6), round(d * x + e * y + f, 6))
 
@@ -24,55 +20,46 @@ def polygon_area_xy(points: Iterable[tuple[float, float]]) -> float:
     pts = list(points)
     if len(pts) < 3:
         return 0.0
-    return abs(
-        sum(
-            pts[i][0] * pts[(i + 1) % len(pts)][1]
-            - pts[(i + 1) % len(pts)][0] * pts[i][1]
-            for i in range(len(pts))
-        )
-        / 2.0
-    )
+    return abs(sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts))) / 2.0)
 
 
-def calculate_pixel_area_m2(
-    transform: Tuple[float, float, float, float, float, float] | None,
-    crs: str | None,
-) -> float | None:
-    """Derive ground area per pixel in square meters if the CRS is projected.
+def calculate_pixel_area_m2(transform: Tuple[float, float, float, float, float, float] | None, crs: str | None) -> float | None:
+    """Derive ground area per pixel in square meters only for projected CRS inputs.
 
-    Returns None when the coordinate system is geographic degrees (e.g. EPSG:4326),
-    unknown, or when no georeferencing transform is available.
+    CRS classification is delegated to rasterio/pyproj when available. A
+    conservative string fallback is retained for lightweight environments.
     """
     if not transform or not crs:
         return None
 
-    crs_upper = crs.upper().strip()
-    # Check if geographic (degrees)
-    if "4326" in crs_upper or "CRS84" in crs_upper or "DEGREE" in crs_upper:
-        if "PROJCS" not in crs_upper and "UTM" not in crs_upper:
+    try:
+        from pyproj import CRS  # type: ignore
+        parsed = CRS.from_user_input(crs)
+        if not parsed.is_projected:
+            return None
+        units = {str(axis.unit_name).lower() for axis in parsed.axis_info if axis.unit_name}
+        if units and not any(unit in {"metre", "meter", "metres", "meters"} for unit in units):
+            return None
+    except (ImportError, Exception):
+        # Conservative fallback for environments without pyproj.
+        crs_upper = crs.upper().strip()
+        geographic_markers = ("4326", "CRS84", "GEOGCS", "DEGREE", "LATITUDE", "LONGITUDE")
+        projected_markers = ("UTM", "3857", "326", "327", "PROJCS", "PROJECTED", "METRE", "METER")
+        if any(marker in crs_upper for marker in geographic_markers) and not any(marker in crs_upper for marker in projected_markers):
+            return None
+        if not any(marker in crs_upper for marker in projected_markers):
             return None
 
-    # Projected linear coordinates: determinant of the 2x2 linear transform part
     a, b, _, d, e, _ = transform
     det = abs(a * e - b * d)
-    if det <= 0.0 or math.isnan(det):
+    if not math.isfinite(det) or det <= 0.0:
         return None
     return round(float(det), 4)
 
 
-def calculate_ground_area(
-    pixel_count: int,
-    transform: Tuple[float, float, float, float, float, float] | None,
-    crs: str | None,
-) -> float | None:
-    """Calculate total ground area in square meters for a given pixel count.
-
-    Returns None if area cannot be reliably calculated in square meters.
-    """
+def calculate_ground_area(pixel_count: int, transform: Tuple[float, float, float, float, float, float] | None, crs: str | None) -> float | None:
+    """Calculate total ground area in square meters when CRS units are metric."""
     if pixel_count <= 0:
         return 0.0
-
     px_area = calculate_pixel_area_m2(transform, crs)
-    if px_area is None:
-        return None
-    return round(float(pixel_count * px_area), 2)
+    return None if px_area is None else round(float(pixel_count * px_area), 2)
