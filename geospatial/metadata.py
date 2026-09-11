@@ -10,28 +10,7 @@ from rasterio.crs import CRS
 
 
 def read_geotiff_metadata(geotiff_path: Union[str, Path]) -> Dict[str, Any]:
-    """
-    Read metadata from a GeoTIFF raster file using rasterio.
-
-    Extracts:
-        - CRS (Coordinate Reference System representation & EPSG code if available)
-        - width & height in pixels
-        - bounds (left, bottom, right, top)
-        - resolution (x_resolution, y_resolution)
-        - transform (affine transformation matrix)
-        - number of bands (count)
-        - dtypes and nodata values
-
-    Args:
-        geotiff_path: Path to the GeoTIFF file.
-
-    Returns:
-        Dictionary containing metadata properties.
-
-    Raises:
-        FileNotFoundError: If the GeoTIFF file does not exist.
-        rasterio.errors.RasterioIOError: If the file is not a valid raster.
-    """
+    """Read raster metadata without treating pixel coordinates as geography."""
     path = Path(geotiff_path)
     if not path.exists():
         raise FileNotFoundError(f"GeoTIFF file not found at: {path}")
@@ -49,19 +28,38 @@ def read_geotiff_metadata(geotiff_path: Union[str, Path]) -> Dict[str, Any]:
             "top": float(src.bounds.top),
         }
 
-        # Resolution: (x_res, y_res)
         res = (float(src.res[0]), float(src.res[1]))
+        dataset_transform = src.transform
 
-        # Transform coefficients as flat tuple / list
-        transform_coeffs = [float(val) for val in src.transform]
+        # Rasterio supplies an identity transform for ordinary PNG/JPEG files
+        # and for rasters whose pixel grid has not been geographically placed.
+        # An identity transform must never be published as latitude/longitude.
+        is_identity_transform = (
+            dataset_transform.a == 1.0
+            and dataset_transform.b == 0.0
+            and dataset_transform.c == 0.0
+            and dataset_transform.d == 0.0
+            and dataset_transform.e == 1.0
+            and dataset_transform.f == 0.0
+        )
+
+        has_gcps = bool(src.gcps[0])
+        has_rpcs = src.rpcs is not None
+        georeferenced = bool(crs_obj and not is_identity_transform) or has_gcps or has_rpcs
+
+        transform_coeffs = (
+            [float(val) for val in dataset_transform]
+            if georeferenced and not is_identity_transform
+            else None
+        )
 
         metadata: Dict[str, Any] = {
             "file_path": str(path.resolve()),
-            "crs": crs_str,
-            "crs_epsg": epsg_code,
-            "crs_wkt": crs_wkt,
-            "is_geographic": crs_obj.is_geographic if crs_obj else False,
-            "is_projected": crs_obj.is_projected if crs_obj else False,
+            "crs": crs_str if georeferenced else None,
+            "crs_epsg": epsg_code if georeferenced else None,
+            "crs_wkt": crs_wkt if georeferenced else None,
+            "is_geographic": bool(crs_obj.is_geographic) if georeferenced and crs_obj else False,
+            "is_projected": bool(crs_obj.is_projected) if georeferenced and crs_obj else False,
             "width": int(src.width),
             "height": int(src.height),
             "bounds": bounds,
@@ -71,6 +69,9 @@ def read_geotiff_metadata(geotiff_path: Union[str, Path]) -> Dict[str, Any]:
             "dtypes": [str(dt) for dt in src.dtypes],
             "nodata": src.nodata,
             "driver": src.driver,
+            "georeferenced": georeferenced,
+            "geospatial_reference_available": georeferenced,
+            "geospatial_warning": None if georeferenced else "Source raster has no valid CRS/geotransform; pixel coordinates are not geographic coordinates.",
         }
 
         return metadata
