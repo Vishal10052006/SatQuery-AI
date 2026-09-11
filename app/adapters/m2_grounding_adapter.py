@@ -35,15 +35,22 @@ def _change_regions_from_result(
     Reconstruct native M2 ChangeRegion objects from a previous
     M2 change-detection ToolResult.
 
-    Native M2 stores regions under:
-        previous_result.data["evidence"]["regions"]
+    Native M2 data can expose regions either under the promoted
+    ``data["regions"]`` field or inside ``data["evidence"]["regions"]``.
+    Accept both forms so grounding consumes the actual M2 output.
     """
 
     if previous_result is None:
         return []
 
-    evidence = previous_result.data.get("evidence", {})
-    raw_regions = evidence.get("regions", [])
+    data = previous_result.data or {}
+    raw_regions = data.get("regions", [])
+
+    # Older/alternate adapters may nest regions inside evidence.
+    if not isinstance(raw_regions, list):
+        evidence_data = data.get("evidence", {})
+        if isinstance(evidence_data, dict):
+            raw_regions = evidence_data.get("regions", [])
 
     if not isinstance(raw_regions, list):
         return []
@@ -198,10 +205,6 @@ def _convert_grounding_output(
 
     # -------------------------------------------------------------
     # Preserve upstream M2/M3 provenance for downstream GIS.
-    #
-    # Grounding adds spatial evidence; it must not destroy the
-    # raster/mask provenance that M5 needs to generate coordinates,
-    # polygons, area and GIS artifacts.
     # -------------------------------------------------------------
     if previous_result is not None:
         upstream = previous_result.data
@@ -218,6 +221,7 @@ def _convert_grounding_output(
             "change_mask_path",
             "bounding_boxes",
             "bounding_boxes_pixel",
+            "regions",
         )
 
         for key in provenance_keys:
@@ -225,18 +229,15 @@ def _convert_grounding_output(
             if value is not None:
                 data[key] = value
 
-        # Preserve the complete upstream data as an auditable trace.
         data["upstream_tool"] = previous_result.tool.value
         data["upstream_status"] = previous_result.status.value
         data["upstream_data"] = dict(upstream)
 
-        # Grounding's boxes are the most recent spatial evidence.
         if boxes_pixel:
             data["bounding_boxes_pixel"] = boxes_pixel
 
         if boxes_geo:
             data["bounding_boxes"] = boxes_geo
-
 
     evidence = [
         Evidence(
@@ -289,10 +290,6 @@ def build_grounding_adapter(
             or "Locate the requested objects."
         )
 
-        # ---------------------------------------------------------
-        # Native M2 grounding
-        # ---------------------------------------------------------
-
         if specialist is None:
             image_path = None
 
@@ -304,9 +301,7 @@ def build_grounding_adapter(
             else:
                 image_path = _previous_image_path(previous_result)
 
-            change_regions = _change_regions_from_result(
-                previous_result
-            )
+            change_regions = _change_regions_from_result(previous_result)
 
             raw_output = native_grounding.ground_target(
                 image_path=image_path,
@@ -319,15 +314,8 @@ def build_grounding_adapter(
                 previous_result=previous_result,
             )
 
-        # ---------------------------------------------------------
-        # External specialist compatibility path
-        # ---------------------------------------------------------
-
         if images:
-            image_paths = [
-                Path(image)
-                for image in images
-            ]
+            image_paths = [Path(image) for image in images]
         elif previous_result is not None:
             image_path = _previous_image_path(previous_result)
 
