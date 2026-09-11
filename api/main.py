@@ -35,10 +35,6 @@ app = FastAPI(
 # ---------------------------------------------------------------
 # Development/frontend CORS support.
 # ---------------------------------------------------------------
-# The React/Vite development server normally runs on port 5173,
-# while FastAPI runs on port 8000. Without CORS the browser rejects
-# otherwise valid API requests made from the frontend.
-# ---------------------------------------------------------------
 _cors_origins = [
     origin.strip()
     for origin in os.getenv(
@@ -114,7 +110,6 @@ def _artifact_urls(result: dict) -> list[str]:
                 if path.exists() and path.is_file():
                     urls.append(f"/outputs/{path.name}")
 
-    # Deduplicate while preserving order.
     return list(dict.fromkeys(urls))
 
 
@@ -263,13 +258,19 @@ def _run_live_mission(
 
 @app.get("/")
 def workspace() -> FileResponse:
-    """Serve the judge-facing mission workspace."""
-    return FileResponse(BASE_DIR / "static" / "dashboard.html")
+    """Serve the simple M6 judge-facing frontend."""
+    return FileResponse(BASE_DIR / "static" / "m6.html")
+
+
+@app.get("/m6")
+def m6_frontend() -> FileResponse:
+    """Explicit route for the simple M6 mission frontend."""
+    return FileResponse(BASE_DIR / "static" / "m6.html")
 
 
 @app.get("/dashboard")
 def dashboard() -> FileResponse:
-    """Explicit route for the SIH judge/demo dashboard."""
+    """Explicit route for the detailed developer dashboard."""
     return FileResponse(BASE_DIR / "static" / "dashboard.html")
 
 
@@ -284,8 +285,6 @@ def health() -> dict:
     }
 
 
-# M6 historically used /api/health. Keep the compatibility route so
-# existing frontend deployments and reverse proxies remain functional.
 @app.get("/api/health")
 def api_health() -> dict:
     """Compatibility alias for the M6 frontend health check."""
@@ -301,7 +300,6 @@ def mission(request: MissionRequest) -> dict:
     )
 
     result = _dump_model(response)
-
     result["mission_id"] = uuid4().hex[:12]
     result["execution_time_ms"] = 0
     result["artifacts"] = _artifact_urls(result)
@@ -337,7 +335,7 @@ async def analyze(
     optical_image: UploadFile | None = File(default=None),
     sar_image: UploadFile | None = File(default=None),
 ) -> dict:
-    """M6 compatibility endpoint for live multipart analysis."""
+    """M6 multipart endpoint for live analysis."""
 
     return _run_live_mission(
         query=query,
