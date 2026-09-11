@@ -30,10 +30,10 @@ class M2Result:
     """Structured and auditable result of the M2 Change Analysis Subsystem."""
 
     task: str = "change_detection"
-    status: str = "success"             # 'success' | 'fallback_baseline' | 'awaiting_model' | 'failed'
+    status: str = "success"
     target: str | None = None
     detector: str = "pixel-difference-baseline"
-    detector_type: str = "baseline"     # 'baseline' | 'neural' | 'fallback_baseline'
+    detector_type: str = "baseline"
     change_detected: bool = False
     confidence: float = 0.0
     changed_pixels: int = 0
@@ -85,11 +85,22 @@ class M2Result:
         }
 
     def to_specialist_result(self) -> SpecialistResult:
-        """Convert M2Result to M4 SpecialistResult maintaining 100% backward compatibility."""
+        """Convert M2Result to the common M4 specialist contract."""
         num_regs = len(self.regions)
         target_info = f" for target '{self.target}'" if self.target else ""
+
         if self.status == "failed":
             claim = f"Change detection failed: {self.error or 'invalid inputs'}."
+        elif self.status == "awaiting_model":
+            claim = (
+                f"Target-guided change detection{target_info} is awaiting the trained "
+                "neural RCD model; no model-derived regions were returned."
+            )
+        elif self.status == "fallback_baseline" and self.target:
+            claim = (
+                f"Temporal change regions were surfaced for target '{self.target}' using "
+                "a deterministic fallback baseline; target semantics were not modeled."
+            )
         elif self.change_detected:
             claim = (
                 f"Detected {num_regs} changed region(s){target_info} "
@@ -124,7 +135,7 @@ class M2Result:
         return SpecialistResult(
             task="change_detection",
             model=self.detector,
-            status=self.status if self.status in {"success", "awaiting_model", "failed"} else "success",
+            status=self.status,
             confidence=self.confidence,
             claim=claim,
             evidence=evidence,
@@ -140,23 +151,18 @@ def run_m2(
     output_dir: str | Path | None = None,
     config: dict[str, Any] | None = None,
 ) -> M2Result:
-    """Run the complete M2 remote-sensing change-analysis pipeline.
-
-    Parameters
-    ----------
-    before_path : Path or str to the earlier remote-sensing observation.
-    after_path : Path or str to the later remote-sensing observation.
-    target : Optional natural-language target query (e.g. 'newly constructed buildings').
-    output_dir : Directory to persist visualization artifacts.
-    config : Optional dict with hyperparameters ('threshold', 'min_pixels', 'use_percentiles').
-    """
+    """Run the complete M2 remote-sensing change-analysis pipeline."""
     cfg = config or {}
     threshold = float(cfg.get("threshold", 0.15))
     min_pixels = int(cfg.get("min_pixels", 8))
     use_percentiles = bool(cfg.get("use_percentiles", False))
     allow_fallback = bool(cfg.get("allow_fallback", True))
 
-    # Stage 1: Bi-temporal Input Validation
+    if not 0.0 <= threshold <= 1.0:
+        return M2Result(status="failed", error="threshold must be between 0.0 and 1.0")
+    if min_pixels < 1:
+        return M2Result(status="failed", error="min_pixels must be at least 1")
+
     validation = validate_bitemporal_inputs(before_path, after_path, target=target)
     if not validation.is_valid:
         return M2Result(
@@ -166,7 +172,6 @@ def run_m2(
             metadata=validation.metadata,
         )
 
-    # Stage 2: Remote-Sensing Preprocessing
     try:
         before_prep = load_and_preprocess(before_path, use_percentiles=use_percentiles)
         after_prep = load_and_preprocess(after_path, use_percentiles=use_percentiles)
@@ -177,7 +182,6 @@ def run_m2(
             warnings=validation.warnings,
         )
 
-    # Stage 3: Image Alignment / Registration
     alignment = align_images(before_prep, after_prep)
     if not alignment.success:
         return M2Result(
@@ -188,13 +192,11 @@ def run_m2(
 
     aligned_after = alignment.after
     all_warnings = list(validation.warnings) + list(alignment.warnings)
-
-    # Stage 4: Change Detection / Target-guided RCD
     cleaned_target = validation.metadata.get("target")
+    rcd_confidence = None
+
     if cleaned_target:
-        # Use Referring Change Detection adapter
-        rcd_adapter = RCDAdapter()
-        rcd_res = rcd_adapter.detect_target_change(
+        rcd_res = RCDAdapter().detect_target_change(
             before_prep,
             aligned_after,
             target=cleaned_target,
@@ -208,21 +210,19 @@ def run_m2(
         change_mask = rcd_res.change_mask
         diff_map = rcd_res.difference_map
         change_regions = rcd_res.regions
+        rcd_confidence = rcd_res.confidence
+        if rcd_res.message:
+            all_warnings.append(rcd_res.message)
     else:
-        # Standard bi-temporal difference baseline
         detector_name = "pixel-difference-baseline"
         detector_type = "baseline"
         status = "success"
-
         diff_map = np.abs(aligned_after.gray - before_prep.gray)
         valid_mask = before_prep.valid_mask & aligned_after.valid_mask
         diff_map[~valid_mask] = 0.0
-
         raw_mask = diff_map >= threshold
         change_mask, change_regions = extract_change_regions(
-            raw_mask,
-            diff_map,
-            min_pixels=min_pixels,
+            raw_mask, diff_map, min_pixels=min_pixels
         )
 
     if change_mask is None:
@@ -233,14 +233,12 @@ def run_m2(
     changed_pixels = int(change_mask.sum())
     change_fraction = float(change_mask.mean())
     mean_diff = float(diff_map.mean())
-    change_detected = (changed_pixels > 0)
+    change_detected = changed_pixels > 0
 
-    # Stage 5: Geospatial Localization & Area Calculation
     before_meta = before_prep.metadata
     transform = before_meta.get("transform")
     crs = before_meta.get("crs")
     georeferenced = bool(before_meta.get("georeferenced") and transform)
-
     overall_geo_bbox = None
     total_area_sq_m = None
 
@@ -263,15 +261,10 @@ def run_m2(
             r.polygon_geo = polygon_pixel_to_geo(r.polygon_pixel, transform)
             r.area_sq_m = calculate_ground_area(r.pixel_count, transform, crs)
 
-    # Convert regions to dictionary representations
     regions_dicts = [r.to_dict() for r in change_regions]
 
-    # Stage 6: Visualization Artifacts
     artifacts: list[str] = []
-    mask_path: str | None = None
-    overlay_path: str | None = None
-    composite_path: str | None = None
-
+    mask_path = overlay_path = composite_path = None
     if output_dir:
         out_dir = Path(output_dir)
         try:
@@ -285,7 +278,6 @@ def run_m2(
                 output_dir=out_dir,
                 target=cleaned_target,
             )
-            # Primary visual artifact at index 0 for contract & test compatibility
             artifacts = [viz_files["composite"]]
             composite_path = str(out_dir / viz_files["composite"])
             overlay_path = str(out_dir / viz_files["overlay"])
@@ -293,17 +285,21 @@ def run_m2(
         except Exception as exc:
             all_warnings.append(f"Visualization generation encountered warning: {exc}")
 
-    # Stage 7: Confidence and Quality Metrics (honest scoring)
     valid_fraction = float(before_prep.metadata.get("valid_pixel_fraction", 1.0))
     align_quality = alignment.quality_score
 
-    if not change_detected:
-        # High confidence that no significant change occurred
+    if status == "awaiting_model":
+        confidence = 0.0
+    elif rcd_confidence is not None:
+        # RCD owns its semantic confidence; alignment and data quality can only
+        # reduce it, never inflate it.
+        confidence = round(float(rcd_confidence) * align_quality * valid_fraction, 2)
+    elif not change_detected:
         confidence = round(0.88 * align_quality * valid_fraction, 2)
     else:
-        # Confidence incorporates alignment quality, valid pixels, and region evidence
-        base_conf = 0.75 if detector_type == "baseline" else 0.70
-        confidence = round(base_conf * align_quality * valid_fraction, 2)
+        # Baseline confidence is intentionally conservative and is not a
+        # calibrated probability.
+        confidence = round(0.75 * align_quality * valid_fraction, 2)
 
     quality = {
         "alignment_status": alignment.status,
@@ -313,6 +309,7 @@ def run_m2(
         "detector_type": detector_type,
         "model_status": status,
         "num_regions": len(change_regions),
+        "confidence_type": "model_or_heuristic_score_not_calibrated_probability",
     }
 
     meta = {
@@ -320,10 +317,7 @@ def run_m2(
         "after_path": str(after_path),
         "threshold": threshold,
         "min_pixels": min_pixels,
-        "image_size": {
-            "width": int(change_mask.shape[1]),
-            "height": int(change_mask.shape[0]),
-        },
+        "image_size": {"width": int(change_mask.shape[1]), "height": int(change_mask.shape[0])},
         "before_meta": before_meta,
         "after_meta": aligned_after.metadata,
     }
