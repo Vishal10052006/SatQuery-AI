@@ -15,50 +15,32 @@ def linear_to_db(
     max_db: float = 5.0,
     epsilon: float = 1e-6,
 ) -> np.ndarray:
-    """Convert linear SAR backscatter values to decibels (dB).
+    """Convert non-negative linear SAR backscatter values to decibels.
 
-    Formula:
-        dB = 10 * log10(max(linear_value, epsilon))
-
-    Args:
-        linear_array: Input array with linear backscatter values (sigma0 / gamma0).
-        min_db: Optional lower clip value in dB.
-        max_db: Optional upper clip value in dB.
-        epsilon: Floor threshold to prevent log10(0) or negative inputs.
-
-    Returns:
-        Float32 array in decibels with NaNs preserved.
+    Invalid, negative, and non-finite linear values are preserved as NaN rather than
+    being silently converted into plausible-looking backscatter values.
     """
-    valid = ~np.isnan(linear_array)
-    db_arr = np.full_like(linear_array, fill_value=np.nan, dtype=np.float32)
+    arr = np.asarray(linear_array)
+    finite = np.isfinite(arr)
+    valid = finite & (arr >= 0.0)
+    db_arr = np.full(arr.shape, np.nan, dtype=np.float32)
 
-    safe_vals = np.maximum(linear_array[valid], epsilon)
-    db_vals = 10.0 * np.log10(safe_vals)
+    if np.any(valid):
+        safe_vals = np.maximum(arr[valid], epsilon)
+        db_vals = 10.0 * np.log10(safe_vals)
+        if min_db is not None or max_db is not None:
+            db_vals = np.clip(db_vals, a_min=min_db, a_max=max_db)
+        db_arr[valid] = db_vals.astype(np.float32)
 
-    if min_db is not None or max_db is not None:
-        db_vals = np.clip(db_vals, a_min=min_db, a_max=max_db)
-
-    db_arr[valid] = db_vals.astype(np.float32)
     return db_arr
 
 
-def db_to_linear(
-    db_array: np.ndarray,
-) -> np.ndarray:
-    """Convert decibels (dB) back to linear backscatter values.
-
-    Formula:
-        linear = 10^(dB / 10)
-
-    Args:
-        db_array: Input array in decibels.
-
-    Returns:
-        Float32 array of linear backscatter values with NaNs preserved.
-    """
-    valid = ~np.isnan(db_array)
-    linear_arr = np.full_like(db_array, fill_value=np.nan, dtype=np.float32)
-    linear_arr[valid] = np.power(10.0, db_array[valid] / 10.0).astype(np.float32)
+def db_to_linear(db_array: np.ndarray) -> np.ndarray:
+    """Convert finite SAR dB values to linear backscatter, preserving invalid values."""
+    arr = np.asarray(db_array)
+    valid = np.isfinite(arr)
+    linear_arr = np.full(arr.shape, np.nan, dtype=np.float32)
+    linear_arr[valid] = np.power(10.0, arr[valid] / 10.0).astype(np.float32)
     return linear_arr
 
 
@@ -72,27 +54,16 @@ def calibrate_sar(
 ) -> SARData:
     """Perform radiometric calibration or dB conversion on SAR data.
 
-    Scientific Assumptions & Transparency:
-        Sentinel-1 Level-1 GRD products require calibration vectors (sigmaNought, betaNought,
-        or gamma) provided in product XML annotation files. When consuming standard pre-processed
-        GeoTIFFs (such as those exported from GEE, ASF, or Planetary Computer), the raster values
-        are frequently already calibrated to linear sigma0 or are stored as digital numbers with an
-        applied scale factor.
-        If `is_already_calibrated` is True, this function assumes the input data represents linear
-        backscatter values. If False, and no calibration LUT is present, a warning is emitted.
-
-    Args:
-        sar_data: Input SARData container.
-        is_already_calibrated: Explicit configuration indicating if the data is already
-                               calibrated to linear backscatter.
-        calibration_type: Target calibration convention ('sigma0', 'gamma0', 'beta0').
-        to_db: If True, converts linear backscatter values to decibel (dB) scale.
-        min_db: Lower clip threshold in dB.
-        max_db: Upper clip threshold in dB.
-
-    Returns:
-        Updated SARData container with calibrated / dB data and updated metadata.
+    If no calibration LUT is supplied, an input marked uncalibrated is treated only as
+    relative backscatter; this function does not fabricate an absolute calibration.
     """
+    calibration_type = str(calibration_type).lower()
+    if calibration_type not in {"sigma0", "gamma0", "beta0"}:
+        raise ValueError("calibration_type must be one of: sigma0, gamma0, beta0")
+
+    if min_db is not None and max_db is not None and min_db >= max_db:
+        raise ValueError("min_db must be smaller than max_db")
+
     data = sar_data.data.copy()
 
     if not is_already_calibrated:
