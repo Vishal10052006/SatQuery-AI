@@ -17,3 +17,55 @@
 .answer-card .card-label > span {
   letter-spacing: 0.08em;
 }
+
+/* Compact judge-facing summary: decision metrics only, never raw pixel counts. */
+.analysis-summary-section {
+  margin-top: 14px;
+  padding: 18px 20px;
+  border: 1px solid rgba(120, 150, 160, 0.18);
+  border-radius: 14px;
+  background: rgba(18, 24, 28, 0.72);
+}
+
+.analysis-summary-table-wrap {
+  overflow-x: auto;
+  margin-top: 14px;
+}
+
+.analysis-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+}
+
+.analysis-summary-table th,
+.analysis-summary-table td {
+  padding: 11px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(120, 150, 160, 0.12);
+  font-size: 12px;
+}
+
+.analysis-summary-table th {
+  color: #82939c;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analysis-summary-table td:first-child {
+  color: #c7d4d9;
+  font-weight: 600;
+}
+
+.analysis-summary-table td:not(:first-child) {
+  color: #e5eef1;
+}
+
+.analysis-summary-note {
+  margin: 12px 0 0;
+  color: #73858e;
+  font-size: 11px;
+  line-height: 1.5;
+}
