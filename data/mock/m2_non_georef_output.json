@@ -1,0 +1,64 @@
+{
+  "task": "change_detection",
+  "status": "success",
+  "target": null,
+  "detector": "pixel-difference-baseline",
+  "detector_type": "baseline",
+  "change_detected": true,
+  "confidence": 0.75,
+  "changed_pixels": 100,
+  "change_fraction": 0.024414,
+  "mean_difference": 0.024414,
+  "number_of_regions": 1,
+  "region_sizes": [100],
+  "geospatial_reference_available": false,
+  "crs": null,
+  "transform": null,
+  "geographic_bbox": null,
+  "changed_area_sq_m": null,
+  "regions": [
+    {
+      "region_id": 1,
+      "pixel_count": 100,
+      "confidence": 0.85,
+      "target": null,
+      "area_sq_m": null,
+      "bbox_pixel": {
+        "xmin": 10,
+        "ymin": 20,
+        "xmax": 19,
+        "ymax": 29
+      },
+      "centroid_pixel": {
+        "x": 14.5,
+        "y": 24.5
+      },
+      "polygon_pixel": [
+        [10, 20],
+        [19, 20],
+        [19, 29],
+        [10, 29],
+        [10, 20]
+      ],
+      "bbox_geo": null,
+      "centroid_geo": null,
+      "polygon_geo": null
+    }
+  ],
+  "artifacts": ["change-12345.png"],
+  "composite_path": "outputs/change-12345.png",
+  "overlay_path": "outputs/overlay-12345.png",
+  "mask_path": "outputs/mask-12345.png",
+  "quality": {
+    "alignment_status": "already_aligned",
+    "alignment_quality": 1.0,
+    "valid_pixel_fraction": 1.0,
+    "georeferenced": false,
+    "detector_type": "baseline",
+    "model_status": "success",
+    "num_regions": 1
+  },
+  "warnings": [
+    "Images are not georeferenced; pixel coordinate grid will be used."
+  ]
+}

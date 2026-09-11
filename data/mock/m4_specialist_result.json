@@ -1,0 +1,60 @@
+{
+  "task": "change_detection",
+  "model": "pixel-difference-baseline",
+  "status": "success",
+  "confidence": 0.75,
+  "claim": "Detected 2 changed region(s) for target 'newly constructed buildings' (450 pixels, 4.39% of scene).",
+  "evidence": {
+    "changed_pixels": 450,
+    "change_fraction": 0.043945,
+    "mean_difference": 0.03812,
+    "number_of_regions": 2,
+    "region_sizes": [350, 100],
+    "geospatial_reference_available": true,
+    "crs": "EPSG:32643",
+    "changed_area_sq_m": 45000.0,
+    "regions": [
+      {
+        "region_id": 1,
+        "pixel_count": 350,
+        "bbox_pixel": {"xmin": 20, "ymin": 30, "xmax": 55, "ymax": 65},
+        "bbox_geo": {
+          "top_left": [500200.0, 2999700.0],
+          "top_right": [500560.0, 2999700.0],
+          "bottom_right": [500560.0, 2999340.0],
+          "bottom_left": [500200.0, 2999340.0]
+        },
+        "centroid_geo": {"x": 500375.0, "y": 2999525.0},
+        "area_sq_m": 35000.0,
+        "polygon_geo": [
+          [500200.0, 2999700.0],
+          [500550.0, 2999700.0],
+          [500550.0, 2999350.0],
+          [500200.0, 2999350.0],
+          [500200.0, 2999700.0]
+        ]
+      },
+      {
+        "region_id": 2,
+        "pixel_count": 100,
+        "bbox_pixel": {"xmin": 110, "ymin": 140, "xmax": 125, "ymax": 155},
+        "bbox_geo": {
+          "top_left": [501100.0, 2998600.0],
+          "top_right": [501260.0, 2998600.0],
+          "bottom_right": [501260.0, 2998440.0],
+          "bottom_left": [501100.0, 2998440.0]
+        },
+        "centroid_geo": {"x": 501175.0, "y": 2998525.0},
+        "area_sq_m": 10000.0,
+        "polygon_geo": [
+          [501100.0, 2998600.0],
+          [501250.0, 2998600.0],
+          [501250.0, 2998450.0],
+          [501100.0, 2998450.0],
+          [501100.0, 2998600.0]
+        ]
+      }
+    ]
+  },
+  "artifacts": ["change-9a4f21bc.png"]
+}

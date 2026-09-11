@@ -18,7 +18,12 @@ from geospatial.visualization import generate_folium_map
 from geospatial.evidence import generate_geojson, generate_evidence_json
 from geospatial.pipeline import run_geospatial_pipeline
 from geospatial.schema import M2M3Payload, EvidenceOutput
-from geospatial.integration import process_m2_m3_result
+from geospatial.integration import process_m2_m3_result, process_m2_detector_output
+from geospatial.m3_adapter import (
+    export_layer_to_geotiff,
+    export_all_layers_to_geotiff,
+    process_m3_evidence_to_m5,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -26,6 +31,9 @@ DATA_MOCK_DIR = BASE_DIR / "data" / "mock"
 SAMPLE_GEOTIFF = DATA_MOCK_DIR / "sample.tif"
 SAMPLE_MASK = DATA_MOCK_DIR / "change_mask.npy"
 M2_RESULT_JSON = DATA_MOCK_DIR / "m2_result.json"
+M2_GEOREF_JSON = DATA_MOCK_DIR / "m2_georef_output.json"
+M2_NON_GEOREF_JSON = DATA_MOCK_DIR / "m2_non_georef_output.json"
+M4_SPECIALIST_JSON = DATA_MOCK_DIR / "m4_specialist_result.json"
 OUTPUT_TEST_DIR = BASE_DIR / "output" / "test_run"
 
 
@@ -350,3 +358,136 @@ class TestM5Geospatial:
         # Invalid type
         with pytest.raises(TypeError):
             process_m2_m3_result(12345)
+
+    def test_14_export_layer_to_geotiff_2d_and_3d(self):
+        """Verify exporting 2D (NDVI) and 3D (Multispectral/SAR) arrays to GeoTIFF."""
+        from rasterio.transform import from_origin
+        import rasterio
+
+        meta = read_geotiff_metadata(SAMPLE_GEOTIFF)
+        transform = meta["transform"]
+        crs = meta["crs"]
+
+        # 1. Test 2D layer (e.g. NDVI, float32)
+        ndvi_arr = np.random.uniform(-0.2, 0.8, size=(64, 64)).astype(np.float32)
+        out_2d = OUTPUT_TEST_DIR / "m3_export" / "ndvi_test.tif"
+        written_2d = export_layer_to_geotiff(ndvi_arr, out_2d, crs, transform)
+
+        assert written_2d.exists()
+        with rasterio.open(written_2d) as src:
+            assert src.count == 1
+            assert src.width == 64
+            assert src.height == 64
+            assert src.crs.to_string() == crs
+
+        # 2. Test 3D layer (e.g. 4-band optical RGBN, uint8)
+        optical_arr = np.random.randint(0, 255, size=(4, 64, 64), dtype=np.uint8)
+        out_3d = OUTPUT_TEST_DIR / "m3_export" / "optical_4band.tif"
+        written_3d = export_layer_to_geotiff(optical_arr, out_3d, crs, transform)
+
+        assert written_3d.exists()
+        with rasterio.open(written_3d) as src:
+            assert src.count == 4
+            assert src.width == 64
+            assert src.height == 64
+            assert src.crs.to_string() == crs
+
+    def test_15_process_m3_evidence_to_m5(self):
+        """Verify bridging M3 multimodal analysis into complete M5 pipeline and GeoTIFF layer exports."""
+        meta = read_geotiff_metadata(SAMPLE_GEOTIFF)
+        transform = meta["transform"]
+        crs = meta["crs"]
+
+        # Simulated M3 multimodal GIS output
+        simulated_m3_evidence = {
+            "crs": crs,
+            "bounds": [700000.0, 3097440.0, 702560.0, 3100000.0],
+            "transform": transform,
+            "resolution": (10.0, 10.0),
+            "spatial_shape": (64, 64),
+            "footprint_geojson": {
+                "type": "Polygon",
+                "coordinates": [[[700000.0, 3097440.0], [702560.0, 3097440.0], [702560.0, 3100000.0], [700000.0, 3100000.0], [700000.0, 3097440.0]]]
+            },
+            "registration_passed": True,
+            "registration_score": 0.98,
+            "confidence_score": 0.93,
+            "predicted_class": "industrial_facility",
+            "layers": {
+                "optical_multispectral": np.random.randint(10, 200, size=(4, 64, 64), dtype=np.uint8),
+                "sar_polarimetric": np.random.uniform(-25.0, 0.0, size=(2, 64, 64)).astype(np.float32),
+                "ndvi": np.random.uniform(-0.1, 0.7, size=(64, 64)).astype(np.float32),
+                "ndwi": np.random.uniform(-0.3, 0.5, size=(64, 64)).astype(np.float32),
+            },
+        }
+
+        out_dir = OUTPUT_TEST_DIR / "m3_bridge_test"
+        evidence = process_m3_evidence_to_m5(
+            m3_gis_evidence=simulated_m3_evidence,
+            output_dir=out_dir,
+            export_layers=True,
+        )
+
+        assert evidence["target"] == "industrial_facility"
+        assert evidence["confidence"] == 0.93
+        assert evidence["change_detected"] is True
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+        # Check that individual layers were exported to GeoTIFF
+        assert (out_dir / "layers" / "optical_multispectral.tif").exists()
+        assert (out_dir / "layers" / "sar_polarimetric.tif").exists()
+        assert (out_dir / "layers" / "ndvi.tif").exists()
+        assert (out_dir / "layers" / "ndwi.tif").exists()
+        assert "exported_layers" in evidence
+
+    def test_16_process_real_m2_georeferenced_detector_output(self):
+        """Verify processing real M2 georeferenced detector output format."""
+        out_dir = OUTPUT_TEST_DIR / "m2_georef_test"
+        evidence = process_m2_m3_result(M2_GEOREF_JSON, output_dir=out_dir)
+
+        assert evidence["target"] == "newly constructed buildings"
+        assert evidence["confidence"] == 0.75
+        assert evidence["change_detected"] is True
+        assert len(evidence["bounding_boxes"]) == 2
+        assert len(evidence["polygons"]) == 2
+        assert evidence["area"]["total_hectares"] > 0
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+
+        # Check that coordinates are in EPSG:4326 (WGS84 lon ~75, lat ~27)
+        first_bbox = evidence["bounding_boxes"][0]["geo_bbox"]
+        assert 65.0 <= first_bbox[0] <= 85.0
+        assert 20.0 <= first_bbox[1] <= 35.0
+
+    def test_17_process_real_m2_non_georeferenced_output(self):
+        """Verify graceful fallback for non-georeferenced M2 outputs (plain PNG/JPG)."""
+        out_dir = OUTPUT_TEST_DIR / "m2_non_georef_test"
+        evidence = process_m2_m3_result(M2_NON_GEOREF_JSON, output_dir=out_dir)
+
+        assert evidence["change_detected"] is True
+        assert len(evidence["bounding_boxes"]) == 1
+        assert len(evidence["polygons"]) == 1
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+        assert evidence["raster_metadata"]["geospatial_reference_available"] is False
+
+    def test_18_process_m4_specialist_result_wrapper(self):
+        """Verify processing M2 output when received wrapped in M4 SpecialistResult."""
+        out_dir = OUTPUT_TEST_DIR / "m4_wrapper_test"
+        evidence = process_m2_m3_result(M4_SPECIALIST_JSON, output_dir=out_dir)
+
+        assert evidence["confidence"] == 0.75
+        assert evidence["change_detected"] is True
+        assert len(evidence["bounding_boxes"]) == 2
+        assert len(evidence["polygons"]) == 2
+        assert (out_dir / "evidence.json").exists()
+        assert (out_dir / "evidence.geojson").exists()
+        assert (out_dir / "map.html").exists()
+        assert evidence["detector_metadata"]["is_m4_wrapped"] is True
+        assert "Detected 2 changed region(s)" in evidence["detector_metadata"]["m4_claim"]
+
+
