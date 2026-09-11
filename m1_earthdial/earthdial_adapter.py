@@ -81,8 +81,6 @@ class EarthDialAdapter:
             if response.status_code != 200:
                 return False
 
-            # If JSON is supplied, reject explicit unhealthy states while accepting
-            # common healthy values. Non-JSON 200 responses remain valid health checks.
             try:
                 data = response.json()
             except ValueError:
@@ -140,12 +138,30 @@ class EarthDialAdapter:
         if hasattr(torch.cuda, "is_bf16_supported") and not torch.cuda.is_bf16_supported():
             model_dtype = torch.float16
 
+        model_kwargs = {
+            "low_cpu_mem_usage": True,
+            "torch_dtype": model_dtype,
+            "device_map": "auto",
+            "trust_remote_code": True,
+        }
+
+        if self.config.load_in_4bit:
+            model_kwargs.update(
+                {
+                    "max_memory": {
+                        0: f"{self.config.gpu_memory_gib}GiB",
+                        "cpu": f"{self.config.cpu_memory_gib}GiB",
+                    },
+                    "load_in_4bit": True,
+                    "bnb_4bit_quant_type": self.config.bnb_quant_type,
+                    "bnb_4bit_compute_dtype": model_dtype,
+                    "bnb_4bit_use_double_quant": self.config.bnb_double_quant,
+                }
+            )
+
         self._model = model_class.from_pretrained(
             self.config.model_checkpoint,
-            low_cpu_mem_usage=True,
-            torch_dtype=model_dtype,
-            device_map="auto",
-            trust_remote_code=True,
+            **model_kwargs,
         ).eval()
 
         image_size = getattr(self._model.config, "force_image_size", None) or getattr(
