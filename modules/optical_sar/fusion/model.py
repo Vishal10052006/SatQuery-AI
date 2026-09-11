@@ -1,7 +1,8 @@
 """Multimodal Optical + SAR model wrapper.
 
-Predictions are emitted only when trained weights are successfully loaded.
-An untrained network is an architecture baseline, not a scientific predictor.
+The class supports an explicit untrained architecture baseline for unit tests and
+model-shape demonstrations. Production inference must provide a weights path; a
+missing/failed weights load is reported as ``not_available`` rather than a scientific prediction.
 """
 from dataclasses import dataclass
 import logging
@@ -13,6 +14,7 @@ import torch.nn.functional as F
 from modules.optical_sar.fusion.feature_fusion import ConvBlock, FeatureFusionNetwork
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ModelInferenceResult:
@@ -35,6 +37,7 @@ class ModelInferenceResult:
             "notes": self.notes,
         }
 
+
 class EarlyFusionNetwork(nn.Module):
     def __init__(self, in_channels: int = 6, feature_dim: int = 128, num_classes: int = 3):
         super().__init__()
@@ -52,6 +55,7 @@ class EarlyFusionNetwork(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.fc(self.encoder(x).flatten(1))
 
+
 class OpticalSARModel(nn.Module):
     """Multimodal model supporting feature and early fusion."""
     def __init__(self, fusion_type: str = "feature", optical_channels: int = 4,
@@ -65,6 +69,7 @@ class OpticalSARModel(nn.Module):
         self.num_classes = num_classes
         self.has_trained_weights = False
         self.weights_error: Optional[str] = None
+        self.architecture_baseline = weights_path is None
 
         if fusion_type == "feature":
             self.network = FeatureFusionNetwork(optical_channels, sar_channels, feature_dim, num_classes)
@@ -83,9 +88,11 @@ class OpticalSARModel(nn.Module):
             state_dict = torch.load(path, map_location=self.device)
             self.load_state_dict(state_dict)
             self.has_trained_weights = True
+            self.architecture_baseline = False
             logger.info("Loaded trained model weights from %s", path)
         except Exception as exc:
             self.has_trained_weights = False
+            self.architecture_baseline = False
             self.weights_error = str(exc)
             logger.warning("Could not load weights from %s: %s", path, exc)
 
@@ -113,7 +120,23 @@ class OpticalSARModel(nn.Module):
 
     @torch.no_grad()
     def predict(self, optical: Union[torch.Tensor, np.ndarray], sar: Union[torch.Tensor, np.ndarray]) -> ModelInferenceResult:
-        """Run inference only with successfully loaded trained weights."""
+        """Run trained inference, or an explicitly labeled architecture baseline."""
+        if self.architecture_baseline and not self.has_trained_weights:
+            self.eval()
+            logits = self.forward(optical, sar)
+            probs = F.softmax(logits, dim=-1)
+            probs_np = probs.cpu().numpy()[0]
+            logits_np = logits.cpu().numpy()[0]
+            return ModelInferenceResult(
+                predicted_class=int(np.argmax(probs_np)),
+                probabilities=probs_np.tolist(),
+                logits=logits_np.tolist(),
+                model_confidence=float(np.max(probs_np)),
+                fusion_type=self.fusion_type,
+                status="untrained_baseline",
+                notes="Architecture-only baseline for development/testing. Random initialization; not a scientific prediction.",
+            )
+
         if not self.has_trained_weights:
             note = "Trained multimodal weights are unavailable; no scientific class prediction was emitted."
             if self.weights_error:
