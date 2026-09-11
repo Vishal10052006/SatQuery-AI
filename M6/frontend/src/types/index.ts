@@ -1,15 +1,15 @@
-export type ViewMode = 
+export type ViewMode =
   | 'dashboard'
   | 'image-understanding'
   | 'change-detection'
   | 'optical-sar'
   | 'history';
 
-export type PipelineStage = 
+export type PipelineStage =
   | 'idle'
-  | 'routing'      // M4: Agentic AI / Routing
-  | 'analyzing'    // M1 / M2 / M3: VLM / Change Detection / Optical+SAR
-  | 'evidence'     // Evidence & Confidence extraction
+  | 'routing'
+  | 'analyzing'
+  | 'evidence'
   | 'completed'
   | 'error';
 
@@ -30,7 +30,7 @@ export interface EvidenceItem {
   confidence: number;
   category: 'urban' | 'water' | 'vegetation' | 'infrastructure' | 'change' | 'radar_backscatter';
   description: string;
-  bbox?: [number, number, number, number]; // [ymin, xmin, ymax, xmax] relative 0-100%
+  bbox?: [number, number, number, number];
 }
 
 export interface DetectedChange {
@@ -74,6 +74,22 @@ export interface SensorMetadata {
   bands?: string[];
 }
 
+export interface ToolEvidenceRecord {
+  type: string;
+  reference?: string;
+  description?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ToolResultRecord {
+  tool: string;
+  status: string;
+  confidence: number;
+  data: Record<string, any>;
+  evidence: ToolEvidenceRecord[];
+  error?: string;
+}
+
 export interface AnalysisResponse {
   id: string;
   mode: ViewMode;
@@ -81,7 +97,7 @@ export interface AnalysisResponse {
   timestamp: number;
   answer: string;
   resultSummary: string;
-  confidence: number; // 0 to 1
+  confidence: number;
   evidence: EvidenceItem[];
   changes?: DetectedChange[];
   reasoningSteps: string[];
@@ -91,6 +107,8 @@ export interface AnalysisResponse {
   opticalImageUrl?: string;
   sarImageUrl?: string;
   overlayImageUrl?: string;
+  artifactUrls?: string[];
+  toolResults?: ToolResultRecord[];
   executionTimeMs?: number;
   modelUsed?: string;
   status: 'completed' | 'error';
@@ -116,4 +134,3 @@ export interface SampleScenario {
   };
   mockResponse: AnalysisResponse;
 }
-
