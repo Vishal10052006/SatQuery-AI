@@ -1,0 +1,122 @@
+{
+  "task": "change_detection",
+  "status": "success",
+  "target": "newly constructed buildings",
+  "detector": "pixel-difference-baseline",
+  "detector_type": "baseline",
+  "change_detected": true,
+  "confidence": 0.75,
+  "changed_pixels": 450,
+  "change_fraction": 0.043945,
+  "mean_difference": 0.03812,
+  "number_of_regions": 2,
+  "region_sizes": [350, 100],
+  "geospatial_reference_available": true,
+  "crs": "EPSG:32643",
+  "transform": [10.0, 0.0, 500000.0, 0.0, -10.0, 3000000.0],
+  "geographic_bbox": {
+    "top_left": [500000.0, 3000000.0],
+    "top_right": [505120.0, 3000000.0],
+    "bottom_right": [505120.0, 2994880.0],
+    "bottom_left": [500000.0, 2994880.0]
+  },
+  "changed_area_sq_m": 45000.0,
+  "regions": [
+    {
+      "region_id": 1,
+      "pixel_count": 350,
+      "confidence": 0.88,
+      "target": "newly constructed buildings",
+      "area_sq_m": 35000.0,
+      "bbox_pixel": {
+        "xmin": 20,
+        "ymin": 30,
+        "xmax": 55,
+        "ymax": 65
+      },
+      "centroid_pixel": {
+        "x": 37.5,
+        "y": 47.5
+      },
+      "polygon_pixel": [
+        [20, 30],
+        [55, 30],
+        [55, 65],
+        [20, 65],
+        [20, 30]
+      ],
+      "bbox_geo": {
+        "top_left": [500200.0, 2999700.0],
+        "top_right": [500560.0, 2999700.0],
+        "bottom_right": [500560.0, 2999340.0],
+        "bottom_left": [500200.0, 2999340.0]
+      },
+      "centroid_geo": {
+        "x": 500375.0,
+        "y": 2999525.0
+      },
+      "polygon_geo": [
+        [500200.0, 2999700.0],
+        [500550.0, 2999700.0],
+        [500550.0, 2999350.0],
+        [500200.0, 2999350.0],
+        [500200.0, 2999700.0]
+      ]
+    },
+    {
+      "region_id": 2,
+      "pixel_count": 100,
+      "confidence": 0.72,
+      "target": "newly constructed buildings",
+      "area_sq_m": 10000.0,
+      "bbox_pixel": {
+        "xmin": 110,
+        "ymin": 140,
+        "xmax": 125,
+        "ymax": 155
+      },
+      "centroid_pixel": {
+        "x": 117.5,
+        "y": 147.5
+      },
+      "polygon_pixel": [
+        [110, 140],
+        [125, 140],
+        [125, 155],
+        [110, 155],
+        [110, 140]
+      ],
+      "bbox_geo": {
+        "top_left": [501100.0, 2998600.0],
+        "top_right": [501260.0, 2998600.0],
+        "bottom_right": [501260.0, 2998440.0],
+        "bottom_left": [501100.0, 2998440.0]
+      },
+      "centroid_geo": {
+        "x": 501175.0,
+        "y": 2998525.0
+      },
+      "polygon_geo": [
+        [501100.0, 2998600.0],
+        [501250.0, 2998600.0],
+        [501250.0, 2998450.0],
+        [501100.0, 2998450.0],
+        [501100.0, 2998600.0]
+      ]
+    }
+  ],
+  "artifacts": ["change-9a4f21bc.png"],
+  "composite_path": "outputs/change-9a4f21bc.png",
+  "overlay_path": "outputs/overlay-8c11e0f2.png",
+  "mask_path": "outputs/mask-b302c118.png",
+  "quality": {
+    "alignment_status": "already_aligned",
+    "alignment_quality": 1.0,
+    "valid_pixel_fraction": 1.0,
+    "georeferenced": true,
+    "detector_type": "baseline",
+    "model_status": "success",
+    "num_regions": 2
+  },
+  "warnings": []
+}
