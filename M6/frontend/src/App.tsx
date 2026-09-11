@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
-  CheckCircle2,
-  ChevronDown,
+  ArrowUpRight,
+  Check,
   CircleDot,
   Database,
   FileImage,
@@ -18,129 +18,175 @@ import {
   Sparkles,
   Upload,
   Workflow,
-  XCircle,
+  X,
 } from 'lucide-react';
 import type { AnalysisResponse, PipelineStage } from './types';
 import { SAMPLE_SCENARIOS } from './services/mockData';
-import { checkBackendHealth, executeSatelliteAnalysis } from './services/api';
+import { API_BASE_URL, checkBackendHealth, executeSatelliteAnalysis } from './services/api';
 
-interface SlotState { file?: File; previewUrl?: string; name: string; }
+interface SlotState {
+  file?: File;
+  previewUrl?: string;
+  name: string;
+}
 
 const EXAMPLE_QUERIES = [
+  'What changed between these two images, and where are the changed regions?',
   'What objects are visible in this image?',
-  'What changed between these two images?',
   'Identify newly constructed areas.',
   'Compare optical and SAR information.',
 ];
 
 const PIPELINE_STEPS = [
-  { key: 'routing', label: 'Query Understanding', icon: Search },
-  { key: 'routing', label: 'Intent Detection', icon: Workflow },
-  { key: 'routing', label: 'Specialist Selection', icon: Network },
-  { key: 'analyzing', label: 'Satellite Analysis', icon: Radar },
-  { key: 'evidence', label: 'Evidence Generation', icon: Layers3 },
-  { key: 'completed', label: 'Final Answer', icon: Sparkles },
+  { label: 'Query', icon: Search },
+  { label: 'Intent', icon: Workflow },
+  { label: 'Route', icon: Network },
+  { label: 'Specialist', icon: Radar },
+  { label: 'Evidence', icon: Layers3 },
+  { label: 'Answer', icon: Sparkles },
 ] as const;
 
 const SPECIALISTS = [
-  { id: 'M1', name: 'EarthDial VQA', role: 'Visual question answering' },
+  { id: 'M1', name: 'EarthDial VQA', role: 'Visual understanding' },
   { id: 'M2', name: 'Change Detection', role: 'Bi-temporal analysis' },
-  { id: 'M3', name: 'Optical + SAR', role: 'Multi-sensor fusion' },
+  { id: 'M3', name: 'Optical + SAR', role: 'Sensor fusion' },
   { id: 'M4', name: 'AI Agent', role: 'Intent + routing' },
-  { id: 'M5', name: 'GIS / Evidence', role: 'Geospatial provenance' },
-  { id: 'M6', name: 'Interface', role: 'Judge demo surface' },
+  { id: 'M5', name: 'GIS / Evidence', role: 'Spatial provenance' },
+  { id: 'M6', name: 'Interface', role: 'Judge experience' },
 ] as const;
 
-const stageRank: Record<PipelineStage, number> = { idle: 0, routing: 1, analyzing: 2, evidence: 3, completed: 4, error: -1 };
-const toFilePreview = (file: File): string => URL.createObjectURL(file);
-const confidenceLabel = (value: number): string => `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+const stageRank: Record<PipelineStage, number> = {
+  idle: 0,
+  routing: 1,
+  analyzing: 2,
+  evidence: 3,
+  completed: 4,
+  error: -1,
+};
 
-const getSpecialist = (result: AnalysisResponse | null, query: string) => {
-  if (result?.mode === 'change-detection' || /change|between|before|after|constructed/i.test(query)) {
+const stageLabel = (stage: PipelineStage): string => ({
+  idle: 'Ready',
+  routing: 'Routing',
+  analyzing: 'Analyzing',
+  evidence: 'Building evidence',
+  completed: 'Complete',
+  error: 'Error',
+}[stage]);
+
+const specialistFor = (result: AnalysisResponse | null, query: string) => {
+  const tool = result?.toolResults?.find((item) => item.tool.includes('m2_change_detection') || item.tool.includes('m3_optical_sar') || item.tool.includes('m1_vqa'))?.tool;
+  if (tool?.includes('m2_change_detection') || /change|between|before|after|constructed|construction/i.test(query)) {
     return { id: 'M2', name: 'Change Detection', reason: 'Temporal comparison requested' };
   }
-  if (result?.mode === 'optical-sar' || /sar|optical|radar/i.test(query)) {
+  if (tool?.includes('m3_optical_sar') || /sar|optical|radar/i.test(query)) {
     return { id: 'M3', name: 'Optical + SAR', reason: 'Multi-sensor comparison requested' };
   }
   return { id: 'M1', name: 'EarthDial VQA', reason: 'Single-scene visual question requested' };
 };
 
-const stageLabel = (stage: PipelineStage) => ({
-  idle: 'Ready', routing: 'Routing', analyzing: 'Analyzing', evidence: 'Evidence', completed: 'Complete', error: 'Error',
-}[stage]);
+const confidenceLabel = (value: number): string => `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+const toFilePreview = (file: File): string => URL.createObjectURL(file);
+
+/** Render a compact scalar value from native specialist output. */
+const displayValue = (value: unknown): string => {
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`;
+  if (typeof value === 'object' && value !== null) return 'Structured output';
+  return String(value);
+};
 
 export const App: React.FC = () => {
-  const [isDemoMode, setIsDemoMode] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [backendOnline, setBackendOnline] = useState(false);
-  const [query, setQuery] = useState('What changed in this area between the two satellite images?');
+  const [query, setQuery] = useState(EXAMPLE_QUERIES[0]);
   const [slot1, setSlot1] = useState<SlotState>({ name: '' });
   const [slot2, setSlot2] = useState<SlotState>({ name: '' });
   const [pipelineStage, setPipelineStage] = useState<PipelineStage>('idle');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentResult, setCurrentResult] = useState<AnalysisResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<AnalysisResponse[]>([]);
-  const [activeEvidenceTab, setActiveEvidenceTab] = useState<'imagery' | 'map' | 'provenance'>('imagery');
 
   useEffect(() => {
-    let alive = true;
-    const healthCheck = async () => {
-      const status = await checkBackendHealth();
-      if (alive) setBackendOnline(status.isOnline);
+    let active = true;
+    const check = async () => {
+      const result = await checkBackendHealth();
+      if (active) setBackendOnline(result.isOnline);
     };
-    void healthCheck();
-    const interval = window.setInterval(() => void healthCheck(), 15000);
-    return () => { alive = false; window.clearInterval(interval); };
+    void check();
+    const timer = window.setInterval(() => void check(), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
-  const specialist = useMemo(() => getSpecialist(currentResult, query), [currentResult, query]);
-  const isRunning = !['idle', 'completed', 'error'].includes(pipelineStage);
+  const specialist = useMemo(() => specialistFor(currentResult, query), [currentResult, query]);
+  const isRunning = ['routing', 'analyzing', 'evidence'].includes(pipelineStage);
   const needsPair = specialist.id === 'M2' || specialist.id === 'M3';
   const canAnalyze = Boolean(query.trim()) && Boolean(slot1.previewUrl) && (!needsPair || Boolean(slot2.previewUrl));
+  const confidence = currentResult?.confidence ?? 0;
+  const coordinates = currentResult?.coordinates;
+  const mapUrl = useMemo(() => {
+    if (!coordinates) return undefined;
+    const lat = coordinates.lat;
+    const lng = coordinates.lng;
+    const bbox = currentResult?.boundingBox;
+    const west = bbox?.west ?? lng - 0.12;
+    const south = bbox?.south ?? lat - 0.08;
+    const east = bbox?.east ?? lng + 0.12;
+    const north = bbox?.north ?? lat + 0.08;
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${west},${south},${east},${north}&layer=mapnik&marker=${lat},${lng}`;
+  }, [coordinates, currentResult?.boundingBox]);
 
-  const loadScenario = (scenarioId: string) => {
-    const scenario = SAMPLE_SCENARIOS.find((item) => item.id === scenarioId);
+  const loadScenario = () => {
+    const scenario = SAMPLE_SCENARIOS.find((item) => item.id === 'change-detection-flood');
     if (!scenario) return;
+    setIsDemoMode(true);
     setQuery(scenario.query);
     setCurrentResult(scenario.mockResponse);
-    setErrorMessage(null);
     setPipelineStage('completed');
-    if (scenario.images.primary) {
-      setSlot1({ name: 'Sample satellite scene', previewUrl: scenario.images.primary });
-      setSlot2({ name: '' });
-    } else if (scenario.images.before && scenario.images.after) {
-      setSlot1({ name: 'Before image', previewUrl: scenario.images.before });
-      setSlot2({ name: 'After image', previewUrl: scenario.images.after });
-    } else if (scenario.images.optical && scenario.images.sar) {
-      setSlot1({ name: 'Optical image', previewUrl: scenario.images.optical });
-      setSlot2({ name: 'SAR image', previewUrl: scenario.images.sar });
-    }
+    setErrorMessage(null);
+    setSlot1({ name: 'Before image', previewUrl: scenario.images.before ?? '' });
+    setSlot2({ name: 'After image', previewUrl: scenario.images.after ?? '' });
   };
 
   const handleUpload = (slot: 1 | 2, file?: File) => {
     if (!file) return;
     const next = { file, name: file.name, previewUrl: toFilePreview(file) };
-    if (slot === 1) setSlot1(next); else setSlot2(next);
-    setCurrentResult(null); setPipelineStage('idle'); setErrorMessage(null);
+    if (slot === 1) setSlot1(next);
+    else setSlot2(next);
+    setCurrentResult(null);
+    setPipelineStage('idle');
+    setErrorMessage(null);
   };
 
   const handleAnalyze = async () => {
     setErrorMessage(null);
     if (!canAnalyze) {
-      setErrorMessage(needsPair ? 'Add both satellite inputs before running this specialist.' : 'Add a satellite image before running analysis.');
+      setErrorMessage(needsPair ? 'Add both source images before analysis.' : 'Add a satellite image before analysis.');
       return;
     }
+
     try {
+      setCurrentResult(null);
       setPipelineStage('routing');
-      await new Promise((resolve) => window.setTimeout(resolve, 260));
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
       setPipelineStage('analyzing');
-      await new Promise((resolve) => window.setTimeout(resolve, 260));
-      setPipelineStage('evidence');
+
       const mode = specialist.id === 'M2' ? 'change-detection' : specialist.id === 'M3' ? 'optical-sar' : 'image-understanding';
-      const result = await executeSatelliteAnalysis({ mode, query: query.trim(), primaryImage: slot1, beforeImage: slot1, afterImage: slot2, opticalImage: slot1, sarImage: slot2 }, isDemoMode);
+      const result = await executeSatelliteAnalysis({
+        mode,
+        query: query.trim(),
+        primaryImage: slot1,
+        beforeImage: slot1,
+        afterImage: slot2,
+        opticalImage: slot1,
+        sarImage: slot2,
+      }, isDemoMode);
+
+      setPipelineStage('evidence');
       setCurrentResult(result);
-      setHistory((prev) => [result, ...prev].slice(0, 12));
+      setHistory((items) => [result, ...items].slice(0, 8));
       setPipelineStage('completed');
-      setActiveEvidenceTab('imagery');
     } catch (error) {
       setPipelineStage('error');
       setErrorMessage(error instanceof Error ? error.message : 'Analysis pipeline failed.');
@@ -148,84 +194,192 @@ export const App: React.FC = () => {
   };
 
   const reset = () => {
-    setQuery(''); setSlot1({ name: '' }); setSlot2({ name: '' }); setCurrentResult(null); setPipelineStage('idle'); setErrorMessage(null);
+    setQuery(EXAMPLE_QUERIES[0]);
+    setSlot1({ name: '' });
+    setSlot2({ name: '' });
+    setCurrentResult(null);
+    setPipelineStage('idle');
+    setErrorMessage(null);
   };
 
-  const confidence = currentResult?.confidence ?? 0;
-  const mapCoordinates = currentResult?.coordinates;
-  const hasMap = Boolean(mapCoordinates || currentResult?.boundingBox || currentResult?.geojson);
+  const actualTool = currentResult?.toolResults?.[0];
+  const scalarData = actualTool
+    ? Object.entries(actualTool.data).filter(([key, value]) => {
+        const isScalar = ['string', 'number', 'boolean'].includes(typeof value);
+        return isScalar && !/path|before|after|reference|model|answer/i.test(key);
+      }).slice(0, 8)
+    : [];
+
+  const sourceImages = needsPair
+    ? [
+        { label: specialist.id === 'M3' ? 'OPTICAL' : 'BEFORE', src: slot1.previewUrl },
+        { label: specialist.id === 'M3' ? 'SAR' : 'AFTER', src: slot2.previewUrl },
+      ]
+    : [{ label: 'SATELLITE IMAGE', src: slot1.previewUrl }];
 
   return (
-    <div className="judge-shell">
-      <header className="judge-header">
-        <div className="brand-lockup">
-          <div className="brand-mark"><Radar size={22} /></div>
-          <div><div className="brand-title">SATQUERY AI</div><div className="brand-subtitle">AI-Powered Natural Language Satellite Intelligence</div></div>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-icon"><Radar size={18} /></div>
+          <div>
+            <strong>SATQUERY <span>AI</span></strong>
+            <small>Natural-language satellite intelligence</small>
+          </div>
         </div>
-        <div className="header-actions">
-          <div className={`live-pill ${backendOnline ? 'live' : isDemoMode ? 'demo' : 'offline'}`}><CircleDot size={13} /><span>{backendOnline ? 'Live System' : isDemoMode ? 'Demo System' : 'Backend Offline'}</span></div>
-          <button className="ghost-btn" type="button" onClick={() => setIsDemoMode((value) => !value)}>{isDemoMode ? 'Demo Mode' : 'Live Backend'}<ChevronDown size={15} /></button>
-          <button className="ghost-btn" type="button" onClick={reset}><XCircle size={15} /> Reset</button>
+        <div className="topbar-actions">
+          <span className={`system-status ${backendOnline ? 'online' : 'offline'}`}><CircleDot size={11} /> {backendOnline ? 'LIVE SYSTEM' : 'BACKEND OFFLINE'}</span>
+          <button className={`mode-button ${isDemoMode ? 'active' : ''}`} type="button" onClick={() => setIsDemoMode((value) => !value)}>
+            {isDemoMode ? 'Demo data' : 'Live backend'} <ChevronDown size={13} />
+          </button>
+          <button className="icon-button" type="button" onClick={reset} aria-label="Reset"><X size={16} /></button>
         </div>
       </header>
 
-      <main className="judge-content">
-        <section className="hero-panel">
-          <div><span className="eyebrow"><Sparkles size={14} /> JUDGE DEMO</span><h1>Ask a satellite question. Get an evidence-backed answer.</h1><p>Ask questions about satellite imagery in natural language and receive AI-driven analysis with visual and geospatial evidence.</p></div>
-          <div className="hero-meta"><div><ShieldCheck size={15} /> Provenance-first output</div><div><Activity size={15} /> Agentic routing visible</div><div><Globe2 size={15} /> Geospatial context</div></div>
+      <main className="workspace">
+        <section className="intro">
+          <div>
+            <p className="kicker"><Sparkles size={13} /> JUDGE WORKSPACE</p>
+            <h1>Ask. Analyze. <em>See the evidence.</em></h1>
+            <p className="intro-copy">Ask questions about satellite imagery in natural language and receive AI-driven analysis with visual and geospatial evidence.</p>
+          </div>
+          <div className="intro-proof">
+            <span><ShieldCheck size={14} /> Real backend artifacts</span>
+            <span><Network size={14} /> M4 routing</span>
+            <span><Globe2 size={14} /> GIS-ready</span>
+          </div>
         </section>
 
-        <section className="section-card upload-card">
-          <div className="section-heading"><div><div className="section-title"><Upload size={18} /> Satellite Data</div><div className="section-caption">JPG / PNG / GeoTIFF · drag, drop, or load a judge-ready scenario</div></div><button className="scenario-btn" type="button" onClick={() => loadScenario('change-detection-flood')}>Load Demo Pair</button></div>
-          <div className="upload-grid"><UploadTile label={needsPair ? 'Before Image' : 'Satellite Imagery'} slot={slot1} onFile={(file) => handleUpload(1, file)} />{needsPair && <UploadTile label={specialist.id === 'M3' ? 'SAR Image' : 'After Image'} slot={slot2} onFile={(file) => handleUpload(2, file)} />}</div>
+        <section className="command-grid">
+          <div className="panel data-panel">
+            <div className="panel-head">
+              <div><p className="overline">01 · INPUT</p><h2>Satellite data</h2></div>
+              <button className="text-button" type="button" onClick={loadScenario}>Load demo pair <ArrowUpRight size={14} /></button>
+            </div>
+            <div className={`source-grid ${needsPair ? 'pair' : 'single'}`}>
+              <UploadTile label={needsPair ? (specialist.id === 'M3' ? 'Optical image' : 'Before image') : 'Satellite image'} slot={slot1} onFile={(file) => handleUpload(1, file)} />
+              {needsPair && <UploadTile label={specialist.id === 'M3' ? 'SAR image' : 'After image'} slot={slot2} onFile={(file) => handleUpload(2, file)} />}
+            </div>
+          </div>
+
+          <div className="panel query-panel">
+            <div className="panel-head">
+              <div><p className="overline">02 · QUERY</p><h2>Ask SatQuery</h2></div>
+              <span className="route-hint"><span /> M4 → {specialist.id}</span>
+            </div>
+            <div className="query-box">
+              <MessageSquare size={16} />
+              <textarea value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Satellite intelligence query" placeholder="What changed between these images?" />
+            </div>
+            <div className="suggestions">
+              {EXAMPLE_QUERIES.slice(0, 3).map((example) => <button key={example} type="button" onClick={() => setQuery(example)}>{example}</button>)}
+            </div>
+            <div className="query-footer">
+              <span className="input-note">{needsPair ? 'Two observations required' : 'One observation required'} · JPG / PNG / GeoTIFF</span>
+              <button className="primary-button" type="button" onClick={handleAnalyze} disabled={isRunning || !canAnalyze}>
+                {isRunning ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+                {isRunning ? 'Analyzing' : 'Analyze'}
+              </button>
+            </div>
+            {errorMessage && <div className="error-line">{errorMessage}</div>}
+          </div>
         </section>
 
-        <section className="section-card query-card">
-          <div className="section-heading"><div><div className="section-title"><MessageSquare size={18} /> Ask SatQuery AI</div><div className="section-caption">The query is the primary control surface for the agentic system.</div></div></div>
-          <textarea value={query} onChange={(event) => setQuery(event.target.value)} placeholder="What changed between these two satellite images?" aria-label="Satellite intelligence query" />
-          <div className="example-row"><span>Try:</span>{EXAMPLE_QUERIES.map((example) => <button type="button" key={example} onClick={() => setQuery(example)}>{example}</button>)}</div>
-          <div className="query-actions"><div className="query-status"><span className={`status-dot ${isRunning ? 'busy' : 'ready'}`} />{isRunning ? `${stageLabel(pipelineStage)} pipeline…` : `M4 routing ready → ${specialist.id}`}</div><button className="analyze-btn" type="button" onClick={handleAnalyze} disabled={isRunning || !canAnalyze}>{isRunning ? <Loader2 size={17} className="spin" /> : <Sparkles size={17} />}{isRunning ? 'Analyzing…' : 'Analyze'}</button></div>
-          {errorMessage && <div className="error-banner"><XCircle size={15} /> {errorMessage}</div>}
-        </section>
-
-        <section className="section-card pipeline-card">
-          <div className="section-heading compact"><div><div className="section-title"><Workflow size={18} /> AI Analysis Pipeline</div><div className="section-caption">Execution state exposed for judge visibility.</div></div><span className={`stage-chip ${pipelineStage}`}>{stageLabel(pipelineStage)}</span></div>
-          <div className="pipeline-track">{PIPELINE_STEPS.map((step, index) => { const done = pipelineStage === 'completed' || stageRank[pipelineStage] > index; const active = (pipelineStage === 'routing' && index < 3) || (pipelineStage === 'analyzing' && index === 3) || (pipelineStage === 'evidence' && index === 4); const Icon = step.icon; return <React.Fragment key={`${step.key}-${step.label}`}><div className={`pipeline-node ${done ? 'done' : ''} ${active ? 'active' : ''}`}><div className="pipeline-icon">{done ? <CheckCircle2 size={16} /> : <Icon size={16} />}</div><span>{step.label}</span></div>{index < PIPELINE_STEPS.length - 1 && <div className={`pipeline-connector ${done ? 'done' : ''}`} />}</React.Fragment>; })}</div>
-          <div className="specialist-row"><div><span className="mini-label">Selected Specialist</span><strong><Radar size={15} /> {specialist.id} — {specialist.name}</strong><span>{specialist.reason}</span></div><div className="routing-badge"><Network size={15} /> M4 Agent Controller</div></div>
+        <section className="pipeline-strip">
+          <div className="pipeline-title"><span className="overline">03 · AGENT</span><strong>Execution</strong></div>
+          <div className="pipeline-steps">
+            {PIPELINE_STEPS.map((step, index) => {
+              const done = pipelineStage === 'completed' || stageRank[pipelineStage] > index;
+              const active = pipelineStage !== 'completed' && ((pipelineStage === 'routing' && index < 3) || (pipelineStage === 'analyzing' && index === 3) || (pipelineStage === 'evidence' && index === 4));
+              const Icon = step.icon;
+              return <div className={`pipeline-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={step.label}><span>{done ? <Check size={13} /> : <Icon size={13} />}</span><small>{step.label}</small>{index < PIPELINE_STEPS.length - 1 && <i />}</div>;
+            })}
+          </div>
+          <span className={`pipeline-state ${pipelineStage}`}>{stageLabel(pipelineStage)}</span>
         </section>
 
         {currentResult && <>
+          <section className="result-header">
+            <div><p className="overline">04 · RESULT</p><h2>Analysis result</h2></div>
+            <div className="result-meta"><span><Database size={13} /> {isDemoMode ? 'Demo response' : 'M5 / M4 response'}</span>{currentResult.executionTimeMs != null && <span>{currentResult.executionTimeMs} ms</span>}</div>
+          </section>
+
           <section className="result-grid">
-            <div className="finding-card"><div className="finding-header"><div className="section-title"><Sparkles size={18} /> AI Finding</div><span className="success-tag"><CheckCircle2 size={13} /> SUCCESS</span></div><p className="finding-answer">{currentResult.answer}</p><div className="finding-footer"><div><span className="mini-label">Operational confidence</span><div className="confidence-meter"><span style={{ width: `${confidence * 100}%` }} /></div></div><strong>{confidenceLabel(confidence)}</strong></div>{currentResult.modelUsed && <div className="model-line"><Database size={14} /> {currentResult.modelUsed}</div>}</div>
-            <div className="geo-card"><div className="finding-header"><div className="section-title"><MapPin size={18} /> Geospatial Evidence</div>{hasMap && <span className="success-tag"><Globe2 size={13} /> GEO-REFERENCED</span>}</div><div className="geo-stage"><div className="geo-gridlines" /><div className="geo-crosshair"><div className="crosshair-ring" /><MapPin size={28} /></div><div className="geo-badge">CHANGE REGION</div>{!hasMap && <div className="geo-empty">Coordinates or GeoJSON will appear here when returned by the analysis.</div>}</div><div className="geo-meta"><span>Location</span><strong>{mapCoordinates?.locationName ?? 'Analysis footprint'}</strong><span>Coordinates</span><strong>{mapCoordinates ? `${mapCoordinates.lat.toFixed(5)}, ${mapCoordinates.lng.toFixed(5)}` : '—'}</strong></div></div>
+            <article className="answer-card">
+              <div className="card-label"><Sparkles size={14} /> AI finding <span>SUCCESS</span></div>
+              <p className="answer">{currentResult.answer}</p>
+              <div className="confidence-row"><div><small>Operational confidence</small><div className="confidence-track"><span style={{ width: `${confidence * 100}%` }} /></div></div><strong>{confidenceLabel(confidence)}</strong></div>
+              {currentResult.modelUsed && <p className="model"><Database size={12} /> {currentResult.modelUsed}</p>}
+            </article>
+
+            <article className="specialist-card">
+              <div className="card-label"><Network size={14} /> M4 routing</div>
+              <div className="selected-specialist"><span className="specialist-orb"><Radar size={17} /></span><div><small>Selected specialist</small><strong>{specialist.id} · {specialist.name}</strong><p>{specialist.reason}</p></div></div>
+              <div className="routing-line"><span>Intent</span><strong>{currentResult.toolResults?.[0]?.tool?.replaceAll('_', ' ').toUpperCase() ?? specialist.id}</strong></div>
+              <div className="routing-line"><span>Tool status</span><strong>{actualTool?.status?.toUpperCase() ?? 'SUCCESS'}</strong></div>
+            </article>
           </section>
 
-          <section className="section-card evidence-card">
-            <div className="evidence-tabs">{[['imagery','Visual Evidence'],['map','Geospatial Evidence'],['provenance','Evidence / Provenance']].map(([id, label]) => <button key={id} type="button" className={activeEvidenceTab === id ? 'active' : ''} onClick={() => setActiveEvidenceTab(id as typeof activeEvidenceTab)}>{label}</button>)}</div>
-            {activeEvidenceTab === 'imagery' && <div className="imagery-grid"><ImageEvidenceCard label="BEFORE" src={currentResult.beforeImageUrl || currentResult.primaryImageUrl || slot1.previewUrl} /><ImageEvidenceCard label="AFTER" src={currentResult.afterImageUrl || currentResult.opticalImageUrl || slot2.previewUrl} /><ImageEvidenceCard label="CHANGE OVERLAY" src={currentResult.overlayImageUrl} overlay /></div>}
-            {activeEvidenceTab === 'map' && <div className="map-proof-panel"><div className="map-proof-grid" /><div className="map-proof-marker"><MapPin size={20} /><span>{mapCoordinates?.locationName ?? 'Awaiting geospatial result'}</span></div><div className="map-proof-copy"><span className="mini-label">GIS / M5 evidence</span><h3>{hasMap ? 'Geospatial context attached to the answer.' : 'No geospatial artifact returned yet.'}</h3><p>Coordinates, bounding boxes, or GeoJSON returned by the backend are surfaced here as judge-facing evidence.</p></div></div>}
-            {activeEvidenceTab === 'provenance' && <div className="provenance-grid"><ProvenanceGroup title="Source imagery" items={[slot1.previewUrl ? 'Primary / before image loaded' : 'Primary image not provided', slot2.previewUrl ? 'Secondary / after image loaded' : 'Secondary image not provided']} /><ProvenanceGroup title="Processing" items={currentResult.reasoningSteps.slice(0, 6)} /><ProvenanceGroup title="Specialist" items={[`${specialist.id} — ${specialist.name}`, `M4 reason: ${specialist.reason}`, currentResult.status.toUpperCase()]} /></div>}
+          {scalarData.length > 0 && <section className="native-data">
+            <div className="section-heading"><div><p className="overline">NATIVE OUTPUT</p><h3>What the specialist actually returned</h3></div><span>M4 ToolResult</span></div>
+            <div className="metric-row">{scalarData.map(([key, value]) => <div className="metric" key={key}><small>{key.replaceAll('_', ' ')}</small><strong>{displayValue(value)}</strong></div>)}</div>
+          </section>}
+
+          <section className="evidence-section">
+            <div className="section-heading"><div><p className="overline">05 · EVIDENCE</p><h3>Source imagery & generated artifacts</h3></div><span>{currentResult.artifactUrls?.length ?? 0} backend artifact(s)</span></div>
+            <div className="evidence-grid">
+              {sourceImages.map((image) => <EvidenceImage key={image.label} label={image.label} src={image.src} />)}
+              {currentResult.artifactUrls?.filter((url) => /\.(png|jpe?g|webp|tiff?)($|\?)/i.test(url)).map((url) => <EvidenceImage key={url} label="GENERATED ARTIFACT" src={url} artifact />)}
+            </div>
+            {currentResult.artifactUrls && currentResult.artifactUrls.length > 0 && <div className="artifact-links">{currentResult.artifactUrls.map((url) => <a href={url} target="_blank" rel="noreferrer" key={url}><Layers3 size={13} /> {url.split('/').pop()} <ArrowUpRight size={12} /></a>)}</div>}
+            {currentResult.evidence.length > 0 && <div className="evidence-list">{currentResult.evidence.slice(0, 6).map((item) => <div key={item.id}><span>{item.label}</span><small>{item.description}</small><strong>{confidenceLabel(item.confidence)}</strong></div>)}</div>}
           </section>
 
-          <section className="trace-grid"><div className="section-card trace-card"><div className="section-title"><Search size={18} /> Execution Trace</div><div className="trace-list">{['Query parsed',`Intent routed: ${specialist.id === 'M2' ? 'CHANGE_DETECTION' : specialist.id === 'M3' ? 'OPTICAL_SAR' : 'IMAGE_UNDERSTANDING'}`,`${specialist.id} selected by M4`,needsPair ? 'Image inputs validated / compared' : 'Satellite image validated','Evidence generated','Response synthesized'].map((item) => <div key={item}><CheckCircle2 size={15} /> {item}</div>)}</div></div><div className="section-card trace-card"><div className="section-title"><Activity size={18} /> Runtime Summary</div><div className="runtime-grid"><div><span>Mode</span><strong>{isDemoMode ? 'Demo' : backendOnline ? 'Live' : 'Offline'}</strong></div><div><span>Status</span><strong>{currentResult.status.toUpperCase()}</strong></div><div><span>Latency</span><strong>{currentResult.executionTimeMs ? `${currentResult.executionTimeMs} ms` : '—'}</strong></div><div><span>History</span><strong>{history.length} run{history.length === 1 ? '' : 's'}</strong></div></div></div></section>
+          <section className="geo-section">
+            <div className="section-heading"><div><p className="overline">06 · GEOSPATIAL</p><h3>Geospatial evidence</h3></div><span>{coordinates ? 'GEO-REFERENCED' : 'NOT RETURNED'}</span></div>
+            {mapUrl ? <div className="map-wrap"><iframe src={mapUrl} title="Geospatial evidence map" loading="lazy" /></div> : <div className="geo-empty"><MapPin size={19} /><div><strong>No geospatial reference was returned.</strong><p>This is intentionally not simulated. Upload a georeferenced GeoTIFF or ask for location/regions so M4 can invoke grounding + M5 GIS.</p></div></div>}
+            {coordinates && <div className="geo-meta"><span><MapPin size={12} /> {coordinates.locationName ?? 'Analysis location'}</span><strong>{coordinates.lat.toFixed(5)}, {coordinates.lng.toFixed(5)}</strong><small>{coordinates.crs ?? 'CRS not returned'}</small></div>}
+          </section>
+
+          <section className="trace-section">
+            <div className="section-heading"><div><p className="overline">07 · PROVENANCE</p><h3>Execution trace</h3></div></div>
+            <div className="trace-list">{(currentResult.reasoningSteps.length > 0 ? currentResult.reasoningSteps : ['Query parsed', `${specialist.id} selected by M4`, 'Specialist executed', 'Response synthesized']).map((step) => <div key={step}><Check size={14} /> {step}</div>)}</div>
+          </section>
         </>}
 
-        <section className="section-card specialist-card"><div className="section-heading compact"><div><div className="section-title"><ShieldCheck size={18} /> Specialist Status Dashboard</div><div className="section-caption">Six modules, one judge-facing workflow.</div></div></div><div className="specialist-grid">{SPECIALISTS.map((module) => <div key={module.id} className={`specialist-tile ${module.id === specialist.id ? 'selected' : ''}`}><div className="specialist-status"><span /> {module.id}</div><strong>{module.name}</strong><span>{module.role}</span></div>)}</div></section>
+        <section className="specialist-status">
+          <div><p className="overline">SYSTEM</p><h3>Specialist status</h3></div>
+          <div className="specialist-list">{SPECIALISTS.map((item) => <div className={item.id === specialist.id ? 'selected' : ''} key={item.id}><span><i />{item.id}</span><strong>{item.name}</strong><small>{item.role}</small></div>)}</div>
+        </section>
+
+        {history.length > 0 && <div className="history-note"><Activity size={13} /> {history.length} analysis run{history.length === 1 ? '' : 's'} this session · API {API_BASE_URL}</div>}
       </main>
     </div>
   );
 };
 
-interface UploadTileProps { label: string; slot: SlotState; onFile: (file: File) => void; }
+interface UploadTileProps {
+  label: string;
+  slot: SlotState;
+  onFile: (file: File) => void;
+}
+
 const UploadTile: React.FC<UploadTileProps> = ({ label, slot, onFile }) => {
   const inputId = `upload-${label.replace(/\s+/g, '-').toLowerCase()}`;
-  return <div className={`upload-tile ${slot.previewUrl ? 'filled' : ''}`}>{slot.previewUrl ? <><img src={slot.previewUrl} alt={label} /><div className="upload-overlay"><span>{slot.name}</span><label htmlFor={inputId}>Replace image</label></div></> : <label htmlFor={inputId} className="upload-empty"><FileImage size={28} /><strong>{label}</strong><span>Drag & drop image here</span><em>or click to upload</em></label>}<input id={inputId} type="file" accept="image/png,image/jpeg,image/tiff,.tif,.tiff" onChange={(event) => onFile(event.target.files?.[0] as File)} /></div>;
+  const [dragging, setDragging] = useState(false);
+
+  return <div className={`upload-tile ${slot.previewUrl ? 'filled' : ''} ${dragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); onFile(event.dataTransfer.files[0]); }}>
+    <input id={inputId} type="file" accept="image/png,image/jpeg,image/tiff,.tif,.tiff" onChange={(event) => onFile(event.target.files?.[0] as File)} />
+    {slot.previewUrl ? <><img src={slot.previewUrl} alt={label} /><div className="upload-caption"><span>{label}</span><label htmlFor={inputId}>Replace</label></div></> : <label className="upload-empty" htmlFor={inputId}><FileImage size={20} /><strong>{label}</strong><span>Drop image or browse</span><small>JPG · PNG · GeoTIFF</small></label>}
+  </div>;
 };
 
-interface ImageEvidenceCardProps { label: string; src?: string; overlay?: boolean; }
-const ImageEvidenceCard: React.FC<ImageEvidenceCardProps> = ({ label, src, overlay }) => <div className="evidence-image"><div className="evidence-image-label">{label}</div>{src ? <img src={src} alt={label} className={overlay ? 'overlay-image' : ''} /> : <div className="evidence-placeholder"><FileImage size={24} /><span>Waiting for image evidence</span></div>}</div>;
+interface EvidenceImageProps {
+  label: string;
+  src?: string;
+  artifact?: boolean;
+}
 
-interface ProvenanceGroupProps { title: string; items: string[]; }
-const ProvenanceGroup: React.FC<ProvenanceGroupProps> = ({ title, items }) => <div className="provenance-group"><div className="mini-label">{title}</div>{items.map((item) => <div key={item}><CheckCircle2 size={15} /> {item}</div>)}</div>;
+const EvidenceImage: React.FC<EvidenceImageProps> = ({ label, src, artifact }) => <figure className={`evidence-image ${artifact ? 'artifact' : ''}`}><figcaption><span>{label}</span>{artifact && <small>BACKEND</small>}</figcaption>{src ? <img src={src} alt={label} /> : <div className="missing-image"><FileImage size={18} /><span>No image</span></div>}</figure>;
 
 export default App;
