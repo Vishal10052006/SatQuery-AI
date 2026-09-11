@@ -1,0 +1,9 @@
+/* Judge-facing refinements: keep scientific internals available to the API but out of the primary UI. */
+.native-data {
+  display: none !important;
+}
+
+/* Keep the evidence surface visual-first rather than metric-first. */
+.evidence-section .artifact-links {
+  margin-top: 12px;
+}
