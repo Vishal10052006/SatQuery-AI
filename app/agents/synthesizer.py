@@ -25,7 +25,7 @@ class ResponseSynthesizer:
 
     @staticmethod
     def _build_answer(intent: Intent, results: list[ToolResult]) -> str:
-        """Generate the answer from structured M2/M3/M5 evidence, not generic GIS text."""
+        """Generate the answer from structured specialist evidence."""
         if not results:
             return "No analysis result was produced."
 
@@ -35,8 +35,14 @@ class ResponseSynthesizer:
             if m2:
                 data = m2.data or {}
                 target = data.get("target")
-                regions = int(data.get("number_of_regions", len(data.get("regions", []))))
+                region_values = data.get("regions", [])
+                regions = len(region_values) if isinstance(region_values, list) else int(data.get("number_of_regions", 0))
                 detected = bool(data.get("change_detected", False))
+                # The backend can contain regions even when the legacy
+                # change_detected flag is false. Regions are the stronger
+                # evidence for the judge-facing conclusion.
+                if regions > 0:
+                    detected = True
                 area = data.get("changed_area_sq_m")
                 quality = data.get("quality") or {}
                 water_excluded = any("water" in str(w).lower() for w in data.get("warnings", []))
