@@ -1,6 +1,12 @@
 # SatQuery AI - M1 EarthDial GPU Inference Requirements
-# For execution in Google Colab (T4 / A100 GPU) or dedicated CUDA Linux/Windows machine
+# For Google Colab (T4 / A100) or a dedicated CUDA machine.
+# EarthDial itself is required because the local direct backend imports
+# InternVLChatModel and the official EarthDial preprocessing/runtime code.
 
+# Official EarthDial runtime
+EarthDial @ git+https://github.com/hiyamdebary/EarthDial.git
+
+# Core ML runtime
 torch>=2.1.0
 torchvision>=0.16.0
 transformers==4.37.2
@@ -12,6 +18,8 @@ bitsandbytes>=0.41.0
 timm==0.9.12
 einops==0.6.1
 einops-exts==0.0.4
+
+# M1 API / image handling
 pillow>=10.0.0
 pydantic>=2.0.0
 fastapi>=0.100.0
@@ -19,4 +27,3 @@ uvicorn>=0.22.0
 python-multipart>=0.0.6
 requests>=2.28.0
 pyngrok>=7.0.0
-
