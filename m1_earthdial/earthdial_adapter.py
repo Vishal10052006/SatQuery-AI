@@ -66,7 +66,13 @@ class EarthDialAdapter:
         return "mock"
 
     def _remote_healthcheck(self) -> bool:
-        """Return True only when the configured remote server reports readiness."""
+        """Return True when the configured remote server exposes a healthy HTTP endpoint.
+
+        Different FastAPI deployments use different health payloads (for example
+        ``{"status": "ok"}``, ``{"status": "ready"}``, or an empty 200 response).
+        For backend discovery, HTTP 200 is the reliable signal; explicit failure
+        states are rejected without requiring one exact response schema.
+        """
         try:
             import requests
 
@@ -74,8 +80,21 @@ class EarthDialAdapter:
             response = requests.get(health_url, timeout=2.0)
             if response.status_code != 200:
                 return False
-            data = response.json()
-            return data.get("status") == "ready"
+
+            # If JSON is supplied, reject explicit unhealthy states while accepting
+            # common healthy values. Non-JSON 200 responses remain valid health checks.
+            try:
+                data = response.json()
+            except ValueError:
+                return True
+
+            if not isinstance(data, dict):
+                return True
+
+            status = str(data.get("status", "")).lower().strip()
+            if status in {"error", "failed", "failure", "unhealthy", "offline"}:
+                return False
+            return True
         except Exception:
             return False
 
@@ -114,10 +133,17 @@ class EarthDialAdapter:
             from transformers import AutoModel
             model_class = AutoModel
 
+        # EarthDial is published with BF16 weights. Fall back to FP16 on CUDA
+        # devices that do not implement BF16 inference rather than failing during
+        # model construction.
+        model_dtype = torch.bfloat16
+        if hasattr(torch.cuda, "is_bf16_supported") and not torch.cuda.is_bf16_supported():
+            model_dtype = torch.float16
+
         self._model = model_class.from_pretrained(
             self.config.model_checkpoint,
             low_cpu_mem_usage=True,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=model_dtype,
             device_map="auto",
             trust_remote_code=True,
         ).eval()
@@ -126,14 +152,18 @@ class EarthDialAdapter:
             self._model.config.vision_config, "image_size", 448
         )
         self._transform = get_image_tensor_transform(input_size=image_size)
-        print("[EarthDialAdapter] Model and tokenizer successfully loaded on GPU.")
+        self._model_dtype = model_dtype
+        print(
+            f"[EarthDialAdapter] Model and tokenizer successfully loaded on GPU "
+            f"using {model_dtype}."
+        )
 
     def _infer_direct(self, img: Image.Image, question: str, req: ImageVQARequest) -> str:
         """Execute inference directly on the configured local CUDA GPU."""
         self._ensure_direct_model_loaded()
         import torch
 
-        pixel_values = self._transform(img).unsqueeze(0).cuda().to(torch.bfloat16)
+        pixel_values = self._transform(img).unsqueeze(0).cuda().to(self._model_dtype)
         generation_config = {
             "num_beams": req.num_beams,
             "max_new_tokens": req.max_new_tokens,
