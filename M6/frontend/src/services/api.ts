@@ -20,7 +20,6 @@ export async function checkBackendHealth(): Promise<{ isOnline: boolean; url: st
     const timeoutId = setTimeout(() => controller.abort(), 2500);
     const response = await fetch(`${API_BASE_URL}/api/health`, { method: 'GET', signal: controller.signal });
     clearTimeout(timeoutId);
-
     return response.ok
       ? { isOnline: true, url: API_BASE_URL, message: 'Connected to M5 FastAPI backend' }
       : { isOnline: false, url: API_BASE_URL, message: `Backend responded with HTTP ${response.status}` };
@@ -40,28 +39,29 @@ function artifactUrl(value: unknown): string | undefined {
   return `${API_BASE_URL.replace(/\/$/, '')}/${value.replace(/^\//, '')}`;
 }
 
-/** Collect generated artifacts from both top-level M5 output and nested specialist results. */
+/** Collect generated artifacts from top-level M5, M2, and nested upstream evidence. */
 function collectArtifactUrls(raw: any): string[] {
   const candidates: unknown[] = Array.isArray(raw.artifacts) ? raw.artifacts : [];
 
   for (const result of Array.isArray(raw.results) ? raw.results : []) {
     const data = result?.data ?? {};
     for (const key of [
-      'artifacts',
-      'artifact_paths',
-      'change_mask_path',
-      'change_mask',
-      'overlay_path',
-      'overlay_url',
-      'mask_path',
-      'visualization_path',
-      'evidence_path',
-      'geojson_path',
-      'map_path',
+      'artifacts', 'artifact_paths', 'change_mask_path', 'change_mask',
+      'overlay_path', 'overlay_url', 'mask_path', 'composite_path',
+      'visualization_path', 'evidence_path', 'geojson_path', 'map_path',
     ]) {
       const value = data[key];
       if (Array.isArray(value)) candidates.push(...value);
       else if (value) candidates.push(value);
+    }
+
+    const upstream = data.upstream_data;
+    if (upstream && typeof upstream === 'object') {
+      for (const key of ['artifacts', 'artifact_paths', 'change_mask_path', 'overlay_path', 'mask_path', 'composite_path']) {
+        const value = upstream[key];
+        if (Array.isArray(value)) candidates.push(...value);
+        else if (value) candidates.push(value);
+      }
     }
   }
 
@@ -69,10 +69,7 @@ function collectArtifactUrls(raw: any): string[] {
 }
 
 /** Main dispatcher for Demo Mode and the real M5 FastAPI service. */
-export async function executeSatelliteAnalysis(
-  payload: AnalysisPayload,
-  isDemoMode: boolean,
-): Promise<AnalysisResponse> {
+export async function executeSatelliteAnalysis(payload: AnalysisPayload, isDemoMode: boolean): Promise<AnalysisResponse> {
   if (isDemoMode) {
     await new Promise((resolve) => setTimeout(resolve, 900));
     return getMatchingDemoResponse(payload);
@@ -89,15 +86,9 @@ export async function executeSatelliteAnalysis(
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
-
   try {
-    const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    });
+    const response = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: formData, signal: controller.signal });
     clearTimeout(timeoutId);
-
     if (!response.ok) {
       let detail = response.statusText;
       try {
@@ -108,7 +99,6 @@ export async function executeSatelliteAnalysis(
       }
       throw new Error(`M5 Backend Error (${response.status}): ${detail}`);
     }
-
     return normalizeBackendResponse(await response.json(), payload);
   } catch (error) {
     clearTimeout(timeoutId);
@@ -122,7 +112,6 @@ export async function executeSatelliteAnalysis(
 function getMatchingDemoResponse(payload: AnalysisPayload): AnalysisResponse {
   let matched = SAMPLE_SCENARIOS.find((scenario) => scenario.mode === payload.mode);
   if (!matched) matched = SAMPLE_SCENARIOS[0];
-
   const base = matched.mockResponse;
   return {
     ...base,
@@ -153,52 +142,37 @@ function validBoundingBox(value: unknown): value is { west: number; south: numbe
   const south = Number(candidate.south);
   const east = Number(candidate.east);
   const north = Number(candidate.north);
-  return Number.isFinite(west) && Number.isFinite(south) && Number.isFinite(east) && Number.isFinite(north)
+  return Number.isFinite(west) && Number.isFinite(east) && Number.isFinite(south) && Number.isFinite(north)
     && west >= -180 && east <= 180 && south >= -90 && north <= 90
     && west <= east && south <= north;
 }
 
 /** Extract M5's geographic center/bounds from its native nested ToolResult. */
-function extractGeospatial(toolResults: ToolResultRecord[]): {
-  coordinates?: AnalysisResponse['coordinates'];
-  boundingBox?: AnalysisResponse['boundingBox'];
-} {
+function extractGeospatial(toolResults: ToolResultRecord[]): { coordinates?: AnalysisResponse['coordinates']; boundingBox?: AnalysisResponse['boundingBox'] } {
   const gis = [...toolResults].reverse().find((result) => result.tool.includes('m5_gis'));
   const geo = gis?.data?.geographic_coordinates;
-  const center = Array.isArray(geo?.center) && geo.center.length >= 2
-    ? { lat: Number(geo.center[0]), lng: Number(geo.center[1]) }
-    : undefined;
+  const center = Array.isArray(geo?.center) && geo.center.length >= 2 ? { lat: Number(geo.center[0]), lng: Number(geo.center[1]) } : undefined;
   const bounds = Array.isArray(geo?.overall_bounds_4326) && geo.overall_bounds_4326.length >= 4
     ? { west: Number(geo.overall_bounds_4326[0]), south: Number(geo.overall_bounds_4326[1]), east: Number(geo.overall_bounds_4326[2]), north: Number(geo.overall_bounds_4326[3]) }
     : undefined;
-
   return {
-    coordinates: validCoordinates(center)
-      ? { ...center, locationName: 'M5 derived analysis region', crs: 'EPSG:4326' }
-      : undefined,
+    coordinates: validCoordinates(center) ? { ...center, locationName: 'M5 derived analysis region', crs: 'EPSG:4326' } : undefined,
     boundingBox: validBoundingBox(bounds) ? bounds : undefined,
   };
 }
 
-/**
- * Remove implementation-level pixel counts from judge-facing prose while
- * preserving the underlying native ToolResult and generated artifacts.
- */
+/** Remove implementation-level pixel counts from judge-facing prose. */
 function cleanJudgeAnswer(answer: unknown, query: string): string {
   let text = typeof answer === 'string' ? answer.trim() : '';
   if (!text) return 'Satellite analysis completed. Review the generated evidence below.';
-
   const isChangeQuery = /change|between|before|after|constructed|construction|newly built/i.test(query);
   if (!isChangeQuery) return text;
-
-  text = text
+  return text
     .replace(/\s*\([\d,]+\s+pixels?,\s*[\d.]+%\s+of\s+(?:the\s+)?scene\)/gi, '')
     .replace(/Detected\s+[\d,]+\s+changed region\(s\)/gi, 'Detected land-surface change zones')
     .replace(/Provided\s+[\d,]+\s+spatial bounding box\(es\)\s+derived from detected change regions/gi, 'Spatial boundaries were derived for the detected change zones')
     .replace(/\s{2,}/g, ' ')
     .trim();
-
-  return text;
 }
 
 /** Normalize the complete M5/M4 response without throwing away nested evidence. */
@@ -207,7 +181,7 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
     ? raw.results.map((result: any) => ({
         tool: String(result.tool || 'unknown'),
         status: String(result.status || 'unknown'),
-        confidence: typeof result.confidence === 'number' ? result.confidence : 0,
+        confidence: Number.isFinite(Number(result.confidence)) ? Number(result.confidence) : 0,
         data: result.data && typeof result.data === 'object' ? result.data : {},
         evidence: Array.isArray(result.evidence) ? result.evidence : [],
         error: result.error,
@@ -218,9 +192,6 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
   const imageArtifacts = artifacts.filter((url) => /\.(png|jpe?g|webp|tiff?)($|\?)/i.test(url));
   const overlay = raw.overlay || raw.overlay_url || raw.mask_url || imageArtifacts.find((url) => /mask|change|overlay|diff/i.test(url));
   const geospatial = extractGeospatial(toolResults);
-
-  // If geographic evidence is absent or invalid, do not expose a misleading
-  // global map/GeoJSON artifact as if it were a real-world location map.
   const geospatialAvailable = Boolean(geospatial.coordinates && geospatial.boundingBox);
   const judgeArtifacts = geospatialAvailable
     ? artifacts
@@ -232,6 +203,20 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
       ? { lat: Number(raw.lat), lng: Number(raw.lng), locationName: raw.location_name }
       : undefined);
 
+  const normalizedEvidence = Array.isArray(raw.evidence)
+    ? raw.evidence.map((item: any) => ({
+        ...item,
+        confidence: Number.isFinite(Number(item?.confidence))
+          ? Number(item.confidence)
+          : (toolResults.find((tool) => tool.tool.replaceAll('_', ' ') === String(item?.reference || '').replaceAll('_', ' '))?.confidence ?? toolResults.at(-1)?.confidence ?? 0),
+      }))
+    : [];
+
+  const rawStatus = normalizeRawStatus(raw.status);
+  const overallConfidence = Number.isFinite(Number(raw.confidence))
+    ? (Number(raw.confidence) > 1 ? Number(raw.confidence) / 100 : Number(raw.confidence))
+    : toolResults.filter((tool) => tool.status !== 'failed').at(-1)?.confidence ?? 0;
+
   return {
     id: raw.id || raw.mission_id || `res-${Date.now()}`,
     mode: payload.mode,
@@ -239,8 +224,8 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
     timestamp: Date.now(),
     answer: cleanJudgeAnswer(raw.answer || raw.result || raw.summary, payload.query),
     resultSummary: raw.result_summary || raw.short_summary || 'Satellite intelligence processed.',
-    confidence: typeof raw.confidence === 'number' ? (raw.confidence > 1 ? raw.confidence / 100 : raw.confidence) : toolResults.at(-1)?.confidence ?? 0,
-    evidence: Array.isArray(raw.evidence) ? raw.evidence : [],
+    confidence: Math.max(0, Math.min(1, overallConfidence)),
+    evidence: normalizedEvidence,
     changes: Array.isArray(raw.changes) ? raw.changes : undefined,
     reasoningSteps: Array.isArray(raw.trace) ? raw.trace : Array.isArray(raw.reasoning_steps) ? raw.reasoning_steps : [],
     primaryImageUrl: raw.image_url || raw.primary_image_url || payload.primaryImage?.previewUrl,
@@ -253,7 +238,7 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
     toolResults,
     modelUsed: raw.model_used || toolResults.map((result) => result.tool).join(' → ') || 'M4 Agent Controller',
     executionTimeMs: raw.execution_time_ms,
-    status: raw.status === 'failed' ? 'error' : 'completed',
+    status: rawStatus,
     error: raw.error,
     coordinates: directCoordinates || geospatial.coordinates,
     boundingBox: validBoundingBox(raw.bounding_box) ? raw.bounding_box : (validBoundingBox(raw.bbox_coords) ? raw.bbox_coords : geospatial.boundingBox),
@@ -265,4 +250,12 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
       crs: raw.crs || geospatial.coordinates?.crs || 'Not returned by backend',
     },
   };
+}
+
+function normalizeRawStatus(value: unknown): AnalysisResponse['status'] {
+  const status = String(value ?? '').trim().toLowerCase();
+  if (status === 'failed' || status === 'error') return 'error';
+  if (status === 'partial' || status === 'degraded' || status === 'fallback_baseline') return 'partial';
+  if (status === 'success' || status === 'completed') return 'completed';
+  return 'completed';
 }
