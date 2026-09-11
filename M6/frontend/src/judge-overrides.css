@@ -74,6 +74,13 @@
   color: #e5eef1;
 }
 
+/* Construction area and water-feature counts are not supported by the current
+   M2 evidence contract, so do not present empty/unavailable fields to judges. */
+.analysis-summary-table tbody tr:nth-child(3),
+.analysis-summary-table tbody tr:nth-child(4) {
+  display: none;
+}
+
 .analysis-summary-note {
   margin: 12px 0 0;
   color: #73858e;
