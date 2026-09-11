@@ -3,7 +3,17 @@
   display: none !important;
 }
 
+/* Hide the old hard-coded backend route label; the specialist card below is the source of truth. */
+.result-meta > span:first-child {
+  display: none !important;
+}
+
 /* Keep the evidence surface visual-first rather than metric-first. */
 .evidence-section .artifact-links {
   margin-top: 12px;
+}
+
+/* Make the finding badge read as a result state rather than an implementation detail. */
+.answer-card .card-label > span {
+  letter-spacing: 0.08em;
 }
