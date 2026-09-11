@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 import numpy as np
 import torch
 
@@ -53,6 +53,7 @@ class OpticalSARPipelineResult:
             "sar": self.sar,
             "registration": self.registration,
             "fusion": self.fusion,
+            "features": self.features,
             "prediction": self.prediction,
             "confidence": self.confidence,
             "metadata": self.metadata,
@@ -118,8 +119,6 @@ def run_optical_sar_pipeline(
         max_db=cfg.sar.max_db,
     )
 
-    # Lee filtering is defined for linear multiplicative SAR intensity. The filter
-    # converts dB input to linear internally and restores dB afterward.
     sar_filtered_data = apply_speckle_filter(
         image=sar_cal.data,
         method=cfg.sar.speckle_filter_method,
@@ -185,9 +184,6 @@ def run_optical_sar_pipeline(
     if run_inference:
         try:
             if model is None:
-                # Pass the expected checkpoint path even when it does not exist. This
-                # prevents the model wrapper from entering its explicit architecture-only
-                # baseline mode in the production pipeline.
                 weights_path = Path(__file__).resolve().parent / "weights" / "m3_optical_sar_model.pth"
                 model = OpticalSARModel(
                     fusion_type=cfg.fusion.method,
