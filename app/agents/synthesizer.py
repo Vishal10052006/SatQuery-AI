@@ -128,7 +128,6 @@ class ResponseSynthesizer:
         if messages:
             return " ".join(messages)
 
-        # Fall back to structured specialist output.
         structured_outputs: list[str] = []
 
         for result in results:
@@ -154,6 +153,12 @@ class ResponseSynthesizer:
             for result in results
         ):
             return "Analysis completed partially."
+
+        if any(
+            result.status == ExecutionStatus.FAILED
+            for result in results
+        ):
+            return "Analysis could not be completed because a required specialist failed."
 
         return "Analysis completed successfully."
 
