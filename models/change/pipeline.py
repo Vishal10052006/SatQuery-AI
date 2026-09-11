@@ -98,14 +98,12 @@ class M2Result:
             )
         elif self.status == "fallback_baseline" and self.target:
             claim = (
-                f"Temporal change regions were surfaced for target '{self.target}' using "
-                "a deterministic fallback baseline; target semantics were not modeled."
+                f"Land-surface change zones were identified for '{self.target}' using a "
+                "deterministic temporal baseline. Persistent water was excluded from "
+                "land-change evidence; results are operational, not calibrated predictions."
             )
         elif self.change_detected:
-            claim = (
-                f"Detected {num_regs} changed region(s){target_info} "
-                f"({self.changed_pixels} pixels, {self.change_fraction * 100:.2f}% of scene)."
-            )
+            claim = f"Detected meaningful change zones{target_info} across the analyzed scene."
         else:
             claim = f"No significant change detected{target_info} between before and after observations."
 
@@ -113,13 +111,13 @@ class M2Result:
             "model": self.detector,
             "status": self.status,
             "detector_type": self.detector_type,
-            "threshold": self.metadata.get("threshold", 0.15),
+            "threshold": self.metadata.get("threshold", 0.18),
             "image_size": self.metadata.get("image_size", {}),
             "changed_pixels": self.changed_pixels,
             "changed_fraction": round(self.change_fraction, 6),
             "mean_difference": round(self.mean_difference, 6),
             "regions": self.regions,
-            "number_of_regions": len(self.regions),
+            "number_of_regions": num_regs,
             "region_sizes": [r.get("pixel_count", 0) for r in self.regions],
             "target": self.target,
             "before": self.metadata.get("before_path"),
@@ -153,8 +151,8 @@ def run_m2(
 ) -> M2Result:
     """Run the complete M2 remote-sensing change-analysis pipeline."""
     cfg = config or {}
-    threshold = float(cfg.get("threshold", 0.15))
-    min_pixels = int(cfg.get("min_pixels", 8))
+    threshold = float(cfg.get("threshold", 0.18))
+    min_pixels = int(cfg.get("min_pixels", 32))
     use_percentiles = bool(cfg.get("use_percentiles", False))
     allow_fallback = bool(cfg.get("allow_fallback", True))
 
@@ -165,30 +163,17 @@ def run_m2(
 
     validation = validate_bitemporal_inputs(before_path, after_path, target=target)
     if not validation.is_valid:
-        return M2Result(
-            status="failed",
-            error="; ".join(validation.errors),
-            warnings=validation.warnings,
-            metadata=validation.metadata,
-        )
+        return M2Result(status="failed", error="; ".join(validation.errors), warnings=validation.warnings, metadata=validation.metadata)
 
     try:
         before_prep = load_and_preprocess(before_path, use_percentiles=use_percentiles)
         after_prep = load_and_preprocess(after_path, use_percentiles=use_percentiles)
     except Exception as exc:
-        return M2Result(
-            status="failed",
-            error=f"Preprocessing failed: {exc}",
-            warnings=validation.warnings,
-        )
+        return M2Result(status="failed", error=f"Preprocessing failed: {exc}", warnings=validation.warnings)
 
     alignment = align_images(before_prep, after_prep)
     if not alignment.success:
-        return M2Result(
-            status="failed",
-            error=alignment.error or "Spatial alignment failed.",
-            warnings=validation.warnings + alignment.warnings,
-        )
+        return M2Result(status="failed", error=alignment.error or "Spatial alignment failed.", warnings=validation.warnings + alignment.warnings)
 
     aligned_after = alignment.after
     all_warnings = list(validation.warnings) + list(alignment.warnings)
@@ -221,9 +206,7 @@ def run_m2(
         valid_mask = before_prep.valid_mask & aligned_after.valid_mask
         diff_map[~valid_mask] = 0.0
         raw_mask = diff_map >= threshold
-        change_mask, change_regions = extract_change_regions(
-            raw_mask, diff_map, min_pixels=min_pixels
-        )
+        change_mask, change_regions = extract_change_regions(raw_mask, diff_map, min_pixels=min_pixels)
 
     if change_mask is None:
         change_mask = np.zeros(before_prep.original_shape, dtype=bool)
@@ -245,10 +228,7 @@ def run_m2(
     if georeferenced and transform:
         bw = before_meta.get("width", change_mask.shape[1])
         bh = before_meta.get("height", change_mask.shape[0])
-        overall_geo_bbox = bbox_pixel_to_geo(
-            {"xmin": 0, "ymin": 0, "xmax": bw - 1, "ymax": bh - 1},
-            transform,
-        )
+        overall_geo_bbox = bbox_pixel_to_geo({"xmin": 0, "ymin": 0, "xmax": bw - 1, "ymax": bh - 1}, transform)
         total_area_sq_m = calculate_ground_area(changed_pixels, transform, crs)
 
         for r in change_regions:
@@ -278,7 +258,7 @@ def run_m2(
                 output_dir=out_dir,
                 target=cleaned_target,
             )
-            artifacts = [viz_files["composite"]]
+            artifacts = [viz_files["composite"], viz_files["overlay"], viz_files["mask"]]
             composite_path = str(out_dir / viz_files["composite"])
             overlay_path = str(out_dir / viz_files["overlay"])
             mask_path = str(out_dir / viz_files["mask"])
@@ -291,14 +271,10 @@ def run_m2(
     if status == "awaiting_model":
         confidence = 0.0
     elif rcd_confidence is not None:
-        # RCD owns its semantic confidence; alignment and data quality can only
-        # reduce it, never inflate it.
         confidence = round(float(rcd_confidence) * align_quality * valid_fraction, 2)
     elif not change_detected:
         confidence = round(0.88 * align_quality * valid_fraction, 2)
     else:
-        # Baseline confidence is intentionally conservative and is not a
-        # calibrated probability.
         confidence = round(0.75 * align_quality * valid_fraction, 2)
 
     quality = {
