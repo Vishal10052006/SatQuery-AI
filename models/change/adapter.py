@@ -15,7 +15,16 @@ def run_change_detection(
     target: str | None = None,
     output_dir: str | Path | None = None,
 ) -> SpecialistResult:
-    """Run the M2 change detection pipeline, inspect raster metadata, and return SpecialistResult."""
+    """Run the M2 change detection pipeline and adapt its result to the M4 contract.
+
+    ``fallback_baseline`` is a native M2 detector status: it means a deterministic
+    temporal-difference baseline was used because target-guided RCD inference was
+    unavailable.  M4 historically treats a returned SpecialistResult as an
+    operationally successful tool invocation, so the adapter exposes ``success``
+    at the contract boundary while preserving the native detector status in
+    evidence.  This keeps orchestration compatibility without hiding the
+    scientific limitation from downstream consumers.
+    """
     if before and after and Path(before).exists() and Path(after).exists():
         m2_result = run_m2(
             before_path=before,
@@ -23,7 +32,14 @@ def run_change_detection(
             target=target,
             output_dir=output_dir,
         )
-        return m2_result.to_specialist_result()
+        specialist_result = m2_result.to_specialist_result()
+
+        if m2_result.status == "fallback_baseline":
+            specialist_result.evidence["native_status"] = m2_result.status
+            specialist_result.evidence["operational_status"] = "success"
+            specialist_result.status = "success"
+
+        return specialist_result
 
     return SpecialistResult(
         task="change_detection",
