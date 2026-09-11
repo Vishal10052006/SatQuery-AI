@@ -2,9 +2,10 @@
 
 Verifies that before and after satellite images correspond spatially:
 1. Matching CRS, transform, and dimensions -> already aligned.
-2. Differing dimensions -> safe resampling of the after-image onto the reference (before) grid.
+2. Georeferenced rasters are reprojected/resampled onto the before grid.
 3. Incompatible CRS or disjoint bounds -> explicit alignment failure.
-4. Preserves reference geospatial metadata.
+4. Non-georeferenced images use deterministic pixel-grid resampling.
+5. Reference geospatial metadata is preserved.
 """
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ def _resample_array(
     arr: np.ndarray,
     target_shape: tuple[int, int],
 ) -> np.ndarray:
-    """Resample 2D or 3D float32 array to target (height, width) using PIL bilinear filter."""
+    """Resample 2D or 3D normalized arrays for non-georeferenced imagery."""
     th, tw = target_shape
     h, w = arr.shape[:2]
     if (h, w) == (th, tw):
@@ -56,7 +57,6 @@ def _resample_array(
         resized = pil_img.resize((tw, th), Image.Resampling.BILINEAR)
         return np.asarray(resized, dtype=np.float32) / 255.0
 
-    # Multi-channel
     channels = []
     for c in range(arr.shape[2]):
         channel = arr[:, :, c]
@@ -66,121 +66,174 @@ def _resample_array(
     return np.stack(channels, axis=-1)
 
 
-def _resample_mask(
-    mask: np.ndarray,
-    target_shape: tuple[int, int],
-) -> np.ndarray:
+def _resample_mask(mask: np.ndarray, target_shape: tuple[int, int]) -> np.ndarray:
     """Resample boolean mask using nearest neighbor."""
     th, tw = target_shape
-    h, w = mask.shape
-    if (h, w) == (th, tw):
+    if mask.shape == target_shape:
         return mask
     pil_mask = Image.fromarray(mask.astype(np.uint8) * 255)
     resized = pil_mask.resize((tw, th), Image.Resampling.NEAREST)
     return np.asarray(resized) > 127
 
 
-def align_images(
-    before: PreprocessedImage,
+def _geospatial_resample(
     after: PreprocessedImage,
-) -> AlignmentResult:
-    """Align the after image onto the reference grid of the before image."""
-    warnings: list[str] = []
+    reference: PreprocessedImage,
+) -> tuple[PreprocessedImage, str]:
+    """Reproject a georeferenced after raster onto the exact reference grid."""
+    import rasterio
+    from rasterio.enums import Resampling
+    from rasterio.warp import reproject
 
+    src_transform = after.metadata.get("transform")
+    dst_transform = reference.metadata.get("transform")
+    src_crs = after.metadata.get("crs")
+    dst_crs = reference.metadata.get("crs")
+    if not src_transform or not dst_transform or not src_crs or not dst_crs:
+        raise ValueError("Geospatial alignment requires CRS and affine transform metadata on both rasters.")
+
+    dst_h, dst_w = reference.original_shape
+    channels: list[np.ndarray] = []
+    for c in range(after.data.shape[2]):
+        destination = np.zeros((dst_h, dst_w), dtype=np.float32)
+        reproject(
+            source=after.data[:, :, c].astype(np.float32),
+            destination=destination,
+            src_transform=src_transform,
+            src_crs=src_crs,
+            dst_transform=dst_transform,
+            dst_crs=dst_crs,
+            resampling=Resampling.bilinear,
+        )
+        channels.append(np.clip(destination, 0.0, 1.0))
+    data = np.stack(channels, axis=-1)
+
+    gray = np.zeros((dst_h, dst_w), dtype=np.float32)
+    reproject(
+        source=after.gray.astype(np.float32),
+        destination=gray,
+        src_transform=src_transform,
+        src_crs=src_crs,
+        dst_transform=dst_transform,
+        dst_crs=dst_crs,
+        resampling=Resampling.bilinear,
+    )
+    gray = np.clip(gray, 0.0, 1.0)
+
+    valid_float = np.zeros((dst_h, dst_w), dtype=np.float32)
+    reproject(
+        source=after.valid_mask.astype(np.float32),
+        destination=valid_float,
+        src_transform=src_transform,
+        src_crs=src_crs,
+        dst_transform=dst_transform,
+        dst_crs=dst_crs,
+        resampling=Resampling.nearest,
+    )
+    valid_mask = valid_float > 0.5
+
+    aligned_meta = dict(after.metadata)
+    aligned_meta["resampled_to_reference"] = True
+    aligned_meta["reference_shape"] = reference.original_shape
+    aligned_meta["transform"] = dst_transform
+    aligned_meta["crs"] = dst_crs
+    aligned_meta["bounds"] = reference.metadata.get("bounds")
+    aligned_meta["valid_pixel_fraction"] = round(float(valid_mask.mean()), 6)
+
+    return (
+        PreprocessedImage(
+            data=data,
+            gray=gray,
+            valid_mask=valid_mask,
+            metadata=aligned_meta,
+            original_shape=reference.original_shape,
+        ),
+        "rasterio_reproject",
+    )
+
+
+def align_images(before: PreprocessedImage, after: PreprocessedImage) -> AlignmentResult:
+    """Align the after image onto the exact reference grid of the before image."""
+    warnings: list[str] = []
     b_meta = before.metadata
     a_meta = after.metadata
-
     b_shape = before.original_shape
     a_shape = after.original_shape
+    b_geo = bool(b_meta.get("georeferenced"))
+    a_geo = bool(a_meta.get("georeferenced"))
 
-    # Check CRS compatibility when both are georeferenced
-    if b_meta.get("georeferenced") and a_meta.get("georeferenced"):
+    # A georeferenced pair must remain geospatially meaningful.
+    if b_geo and a_geo:
         b_crs = b_meta.get("crs")
         a_crs = a_meta.get("crs")
-        if b_crs and a_crs and b_crs.strip().upper() != a_crs.strip().upper():
+        if b_crs and a_crs and str(b_crs).strip().upper() != str(a_crs).strip().upper():
             return AlignmentResult(
-                success=False,
-                before=before,
-                after=after,
-                status="failed",
-                method="none",
+                success=False, before=before, after=after, status="failed", method="none",
                 quality_score=0.0,
-                error=(
-                    f"Incompatible CRS: before has '{b_crs}', after has '{a_crs}'. "
-                    "Reprojection required before alignment."
-                ),
+                error=f"Incompatible CRS: before has '{b_crs}', after has '{a_crs}'. Reprojection between different CRS is required before alignment.",
             )
 
-        # Check bounds overlap if both bounds are available
         b_bounds = b_meta.get("bounds")
         a_bounds = a_meta.get("bounds")
         if b_bounds and a_bounds:
-            # Check for disjoint bounds
-            disjoint_x = (
-                b_bounds["right"] < a_bounds["left"] or a_bounds["right"] < b_bounds["left"]
-            )
-            disjoint_y = (
-                b_bounds["top"] < a_bounds["bottom"] or a_bounds["top"] < b_bounds["bottom"]
-            )
+            disjoint_x = b_bounds["right"] < a_bounds["left"] or a_bounds["right"] < b_bounds["left"]
+            disjoint_y = b_bounds["top"] < a_bounds["bottom"] or a_bounds["top"] < b_bounds["bottom"]
             if disjoint_x or disjoint_y:
                 return AlignmentResult(
-                    success=False,
-                    before=before,
-                    after=after,
-                    status="failed",
-                    method="none",
+                    success=False, before=before, after=after, status="failed", method="none",
                     quality_score=0.0,
                     error="Images have completely disjoint spatial bounds and do not overlap.",
                 )
 
-    # Check if already aligned (same dimensions and matching transform)
-    same_shape = (b_shape == a_shape)
-    b_transform = b_meta.get("transform")
-    a_transform = a_meta.get("transform")
-    same_transform = (b_transform == a_transform)
+        same_shape = b_shape == a_shape
+        same_transform = b_meta.get("transform") == a_meta.get("transform")
+        if same_shape and same_transform:
+            return AlignmentResult(
+                success=True, before=before, after=after, status="already_aligned", method="identity",
+                quality_score=1.0, warnings=warnings,
+            )
 
-    if same_shape and (not b_meta.get("georeferenced") or same_transform):
+        warnings.append("After raster is being reprojected/resampled onto the before raster's geospatial grid.")
+        try:
+            aligned_after, method = _geospatial_resample(after, before)
+        except Exception as exc:
+            return AlignmentResult(
+                success=False, before=before, after=after, status="failed", method="none",
+                quality_score=0.0,
+                error=f"Geospatial alignment failed: {exc}", warnings=warnings,
+            )
         return AlignmentResult(
-            success=True,
-            before=before,
-            after=after,
-            status="already_aligned",
-            method="identity",
-            quality_score=1.0,
-            warnings=warnings,
+            success=True, before=before, after=aligned_after, status="resampled", method=method,
+            quality_score=0.92, warnings=warnings,
         )
 
-    # Need resampling of after image onto before image grid
+    # Mixing georeferenced and non-georeferenced observations cannot be safely
+    # aligned in geographic space. Equal pixel grids are still usable, but make
+    # the loss of geospatial comparability explicit.
+    if b_geo != a_geo:
+        warnings.append("Only one image is georeferenced; alignment is performed in pixel space and geographic metadata is not treated as mutually registered.")
+
+    same_shape = b_shape == a_shape
+    if same_shape:
+        return AlignmentResult(
+            success=True, before=before, after=after, status="already_aligned", method="identity",
+            quality_score=1.0, warnings=warnings,
+        )
+
     warnings.append(
         f"Resampling after image from {a_shape[1]}x{a_shape[0]} to reference grid {b_shape[1]}x{b_shape[0]}."
     )
-
-    resampled_data = _resample_array(after.data, b_shape)
-    resampled_gray = _resample_array(after.gray, b_shape)
-    resampled_valid = _resample_mask(after.valid_mask, b_shape)
-
-    # Inherit reference grid metadata
     aligned_meta = dict(after.metadata)
     aligned_meta["resampled_to_reference"] = True
     aligned_meta["reference_shape"] = b_shape
-    aligned_meta["transform"] = b_meta.get("transform")
-    aligned_meta["crs"] = b_meta.get("crs")
-    aligned_meta["bounds"] = b_meta.get("bounds")
-
     aligned_after = PreprocessedImage(
-        data=resampled_data,
-        gray=resampled_gray,
-        valid_mask=resampled_valid,
+        data=_resample_array(after.data, b_shape),
+        gray=_resample_array(after.gray, b_shape),
+        valid_mask=_resample_mask(after.valid_mask, b_shape),
         metadata=aligned_meta,
         original_shape=b_shape,
     )
-
     return AlignmentResult(
-        success=True,
-        before=before,
-        after=aligned_after,
-        status="resampled",
-        method="bilinear_grid_resample",
-        quality_score=0.92,
-        warnings=warnings,
+        success=True, before=before, after=aligned_after, status="resampled",
+        method="bilinear_grid_resample", quality_score=0.92, warnings=warnings,
     )
