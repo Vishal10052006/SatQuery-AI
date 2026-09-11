@@ -18,6 +18,17 @@
   letter-spacing: 0.08em;
 }
 
+/* Confidence is useful to the API but is not part of the judge-facing presentation. */
+[class*="confidence"],
+[class*="Confidence"] {
+  display: none !important;
+}
+
+/* Also remove the confidence row from the compact analysis table. */
+.analysis-summary-table tbody tr:last-child {
+  display: none !important;
+}
+
 /* Compact judge-facing summary: decision metrics only, never raw pixel counts. */
 .analysis-summary-section {
   margin-top: 14px;
