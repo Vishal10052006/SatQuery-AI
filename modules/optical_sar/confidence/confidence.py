@@ -109,6 +109,8 @@ def calculate_multimodal_confidence(
     weighted_sum = sum(normalized_weights[k] * float(components[k]) for k in available_keys if components[k] is not None)
 
     notes_list: List[str] = []
+    if missing:
+        notes_list.append(f"Missing modalities/evidence: {', '.join(missing)}.")
     if "cloud_mask" in missing:
         notes_list.append("Cloud mask unavailable; optical quality was conservatively discounted.")
     if "model_inference" in missing:
