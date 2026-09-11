@@ -55,10 +55,15 @@ const buildSummaryRows = (result: AnalysisResponse | null, _query: string): Summ
   const data = m2?.data ?? {};
   const regions = Array.isArray(data.regions) ? data.regions.length : Number(data.number_of_regions ?? 0);
   const changedFraction = Number(data.changed_fraction ?? data.change_fraction);
-  const areaSqM = Number(data.changed_area_sq_m);
+  const changedAreaSqM = Number(data.changed_area_sq_m);
+  const totalAreaSqM = Number(data.total_area_sq_m);
   const georef = Boolean(data.geospatial_reference_available);
-  const changedSurface = Number.isFinite(areaSqM) && areaSqM > 0 && georef
-    ? `${(areaSqM / 10000).toFixed(2)} ha`
+
+  const formatHa = (value: number): string => `${(value / 10000).toFixed(2)} ha`;
+  const beforeArea = Number.isFinite(totalAreaSqM) && totalAreaSqM > 0 && georef ? formatHa(totalAreaSqM) : 'Image area';
+  const afterArea = Number.isFinite(totalAreaSqM) && totalAreaSqM > 0 && georef ? formatHa(totalAreaSqM) : 'Image area';
+  const changedArea = Number.isFinite(changedAreaSqM) && changedAreaSqM > 0 && georef
+    ? formatHa(changedAreaSqM)
     : Number.isFinite(changedFraction)
       ? `${(changedFraction * 100).toFixed(2)}% of image area`
       : 'Not available';
@@ -66,13 +71,15 @@ const buildSummaryRows = (result: AnalysisResponse | null, _query: string): Summ
   const interpretation = regions > 0
     ? `${regions} temporal change region${regions === 1 ? '' : 's'} detected`
     : 'No temporal change regions returned';
-  const rows: SummaryRow[] = [
-    { metric: 'Changed surface', before: 'Before image', after: 'After image', result: changedSurface },
+
+  return [
+    { metric: 'Before area', before: beforeArea, after: '—', result: georef ? 'Georeferenced scene area' : 'Whole uploaded image; physical area unavailable' },
+    { metric: 'After area', before: '—', after: afterArea, result: georef ? 'Georeferenced scene area' : 'Whole uploaded image; physical area unavailable' },
+    { metric: 'Changed area', before: '—', after: '—', result: changedArea },
     { metric: 'Changed regions', before: '—', after: '—', result: Number.isFinite(regions) ? String(regions) : 'Not available' },
     { metric: 'Detector', before: 'M2', after: 'M2', result: detector },
     { metric: 'Key interpretation', before: '—', after: '—', result: interpretation },
   ];
-  return rows;
 };
 
 export const App: React.FC = () => {
@@ -141,7 +148,7 @@ export const App: React.FC = () => {
       {currentResult && <>
         <section className="result-header"><div><p className="overline">04 · RESULT</p><h2>Analysis result</h2></div><div className="result-meta"><span><Database size={13} /> {routeLabel(currentResult, specialist.id, isDemoMode)}</span>{currentResult.executionTimeMs != null && <span>{currentResult.executionTimeMs} ms</span>}</div></section>
         <section className="result-grid"><article className="answer-card"><div className="card-label"><Sparkles size={14} /> AI finding <span className={`result-badge ${badge.toLowerCase()}`}>{badge}</span></div><p className="answer">{currentResult.answer || (resultStatus === 'error' ? currentResult.error || 'Analysis failed.' : 'Analysis completed.')}</p>{currentResult.modelUsed && <p className="model"><Database size={12} /> {currentResult.modelUsed}</p>}</article><article className="specialist-card"><div className="card-label"><Network size={14} /> M4 routing</div><div className="selected-specialist"><span className="specialist-orb"><Radar size={17} /></span><div><small>Selected specialist</small><strong>{specialist.id} · {specialist.name}</strong><p>{specialist.reason}</p></div></div><div className="routing-line"><span>Last tool</span><strong>{actualTool?.tool?.replaceAll('_', ' ').toUpperCase() ?? specialist.id}</strong></div><div className="routing-line"><span>Tool status</span><strong>{actualTool?.status?.toUpperCase() ?? badge}</strong></div></article></section>
-        {summaryRows.length > 0 && <section className="analysis-summary-section"><div className="section-heading"><div><p className="overline">04A · SUMMARY</p><h3>Change analysis overview</h3></div><span>Derived from M2 evidence</span></div><div className="analysis-summary-table-wrap"><table className="analysis-summary-table"><thead><tr><th>Metric</th><th>Before</th><th>After</th><th>Analysis</th></tr></thead><tbody>{summaryRows.map((row) => <tr key={row.metric}><td>{row.metric}</td><td>{row.before}</td><td>{row.after}</td><td>{row.result}</td></tr>)}</tbody></table></div><p className="analysis-summary-note">Only values actually returned by M2 are shown. Physical area is shown only when the source imagery is georeferenced; otherwise change is reported as image-space percentage.</p></section>}
+        {summaryRows.length > 0 && <section className="analysis-summary-section"><div className="section-heading"><div><p className="overline">04A · SUMMARY</p><h3>Change analysis overview</h3></div><span>Derived from M2 evidence</span></div><div className="analysis-summary-table-wrap"><table className="analysis-summary-table"><thead><tr><th>Metric</th><th>Before</th><th>After</th><th>Analysis</th></tr></thead><tbody>{summaryRows.map((row) => <tr key={row.metric}><td>{row.metric}</td><td>{row.before}</td><td>{row.after}</td><td>{row.result}</td></tr>)}</tbody></table></div><p className="analysis-summary-note">Only measurements returned by M2 are shown. Physical area is used only for georeferenced imagery; JPG/PNG results remain in image space.</p></section>}
         <section className="evidence-section"><div className="section-heading"><div><p className="overline">05 · EVIDENCE</p><h3>Source imagery & generated artifacts</h3></div><span>{currentResult.artifactUrls?.length ?? 0} backend artifact(s)</span></div><div className="evidence-grid">{sourceImages.map((image) => <EvidenceImage key={image.label} label={image.label} src={image.src} />)}{currentResult.artifactUrls?.filter((url) => /\.(png|jpe?g|webp|tiff?)($|\?)/i.test(url)).map((url) => <EvidenceImage key={url} label="GENERATED ARTIFACT" src={url} artifact />)}</div>{currentResult.artifactUrls && currentResult.artifactUrls.length > 0 && <div className="artifact-links">{currentResult.artifactUrls.map((url) => <a href={url} target="_blank" rel="noreferrer" key={url}><Layers3 size={13} /> {url.split('/').pop()} <ArrowUpRight size={12} /></a>)}</div>}{currentResult.evidence.length > 0 && <div className="evidence-list">{currentResult.evidence.slice(0, 6).map((item) => <div key={item.id}><span>{item.label}</span><small>{item.description}</small></div>)}</div>}</section>
         <section className="geo-section"><div className="section-heading"><div><p className="overline">06 · GEOSPATIAL</p><h3>Geospatial evidence</h3></div><span>{mapArtifact || externalMapUrl ? 'AVAILABLE' : 'NOT RETURNED'}</span></div>{mapArtifact ? <div className="map-wrap"><iframe src={mapArtifact} title="M5 generated geospatial evidence" loading="lazy" /></div> : externalMapUrl ? <div className="map-wrap"><iframe src={externalMapUrl} title="Geospatial evidence map" loading="lazy" /></div> : <div className="geo-empty"><MapPin size={19} /><div><strong>No geospatial reference was returned.</strong><p>This is intentionally not simulated. Ask for “where” or “regions”, or upload a georeferenced GeoTIFF so M4 can invoke grounding + M5 GIS.</p></div></div>}{coordinates && <div className="geo-meta"><span><MapPin size={12} /> {coordinates.locationName ?? 'Analysis location'}</span><strong>{coordinates.lat.toFixed(5)}, {coordinates.lng.toFixed(5)}</strong><small>{coordinates.crs ?? 'EPSG:4326'}</small>{geoJsonArtifact && <a href={geoJsonArtifact} target="_blank" rel="noreferrer">GeoJSON <ArrowUpRight size={11} /></a>}</div>}</section>
         <section className="trace-section"><div className="section-heading"><div><p className="overline">07 · PROVENANCE</p><h3>Execution trace</h3></div></div><div className="trace-list">{trace.map((step) => <div key={step}><Check size={14} /> {step}</div>)}</div></section>
