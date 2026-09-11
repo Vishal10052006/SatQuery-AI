@@ -111,7 +111,8 @@ export interface AnalysisResponse {
   toolResults?: ToolResultRecord[];
   executionTimeMs?: number;
   modelUsed?: string;
-  status: 'completed' | 'error';
+  /** completed = all requested work operationally completed; partial = usable evidence with a degraded stage. */
+  status: 'completed' | 'partial' | 'error';
   error?: string;
   coordinates?: GisCoordinates;
   boundingBox?: GisBoundingBox;
