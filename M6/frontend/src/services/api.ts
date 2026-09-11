@@ -137,6 +137,27 @@ function getMatchingDemoResponse(payload: AnalysisPayload): AnalysisResponse {
   };
 }
 
+/** Accept only real WGS84 coordinates. Pixel coordinates must never reach the map. */
+function validCoordinates(value: unknown): value is { lat: number; lng: number; locationName?: string; crs?: string } {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  const lat = Number(candidate.lat);
+  const lng = Number(candidate.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+function validBoundingBox(value: unknown): value is { west: number; south: number; east: number; north: number } {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  const west = Number(candidate.west);
+  const south = Number(candidate.south);
+  const east = Number(candidate.east);
+  const north = Number(candidate.north);
+  return Number.isFinite(west) && Number.isFinite(south) && Number.isFinite(east) && Number.isFinite(north)
+    && west >= -180 && east <= 180 && south >= -90 && north <= 90
+    && west <= east && south <= north;
+}
+
 /** Extract M5's geographic center/bounds from its native nested ToolResult. */
 function extractGeospatial(toolResults: ToolResultRecord[]): {
   coordinates?: AnalysisResponse['coordinates'];
@@ -144,16 +165,18 @@ function extractGeospatial(toolResults: ToolResultRecord[]): {
 } {
   const gis = [...toolResults].reverse().find((result) => result.tool.includes('m5_gis'));
   const geo = gis?.data?.geographic_coordinates;
-  const center = Array.isArray(geo?.center) && geo.center.length >= 2 ? geo.center : undefined;
-  const bounds = Array.isArray(geo?.overall_bounds_4326) && geo.overall_bounds_4326.length >= 4 ? geo.overall_bounds_4326 : undefined;
+  const center = Array.isArray(geo?.center) && geo.center.length >= 2
+    ? { lat: Number(geo.center[0]), lng: Number(geo.center[1]) }
+    : undefined;
+  const bounds = Array.isArray(geo?.overall_bounds_4326) && geo.overall_bounds_4326.length >= 4
+    ? { west: Number(geo.overall_bounds_4326[0]), south: Number(geo.overall_bounds_4326[1]), east: Number(geo.overall_bounds_4326[2]), north: Number(geo.overall_bounds_4326[3]) }
+    : undefined;
 
   return {
-    coordinates: center
-      ? { lat: Number(center[0]), lng: Number(center[1]), locationName: 'M5 derived analysis region', crs: 'EPSG:4326' }
+    coordinates: validCoordinates(center)
+      ? { ...center, locationName: 'M5 derived analysis region', crs: 'EPSG:4326' }
       : undefined,
-    boundingBox: bounds
-      ? { west: Number(bounds[0]), south: Number(bounds[1]), east: Number(bounds[2]), north: Number(bounds[3]) }
-      : undefined,
+    boundingBox: validBoundingBox(bounds) ? bounds : undefined,
   };
 }
 
@@ -196,6 +219,19 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
   const overlay = raw.overlay || raw.overlay_url || raw.mask_url || imageArtifacts.find((url) => /mask|change|overlay|diff/i.test(url));
   const geospatial = extractGeospatial(toolResults);
 
+  // If geographic evidence is absent or invalid, do not expose a misleading
+  // global map/GeoJSON artifact as if it were a real-world location map.
+  const geospatialAvailable = Boolean(geospatial.coordinates && geospatial.boundingBox);
+  const judgeArtifacts = geospatialAvailable
+    ? artifacts
+    : artifacts.filter((url) => !/\/map\.html(?:$|\?)/i.test(url) && !/\.geojson(?:$|\?)/i.test(url));
+
+  const directCoordinates = validCoordinates(raw.coordinates)
+    ? raw.coordinates
+    : (raw.lat != null && raw.lng != null && validCoordinates({ lat: raw.lat, lng: raw.lng })
+      ? { lat: Number(raw.lat), lng: Number(raw.lng), locationName: raw.location_name }
+      : undefined);
+
   return {
     id: raw.id || raw.mission_id || `res-${Date.now()}`,
     mode: payload.mode,
@@ -213,15 +249,15 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
     opticalImageUrl: raw.optical_image_url || payload.opticalImage?.previewUrl,
     sarImageUrl: raw.sar_image_url || payload.sarImage?.previewUrl,
     overlayImageUrl: artifactUrl(overlay),
-    artifactUrls: artifacts,
+    artifactUrls: judgeArtifacts,
     toolResults,
     modelUsed: raw.model_used || toolResults.map((result) => result.tool).join(' → ') || 'M4 Agent Controller',
     executionTimeMs: raw.execution_time_ms,
     status: raw.status === 'failed' ? 'error' : 'completed',
     error: raw.error,
-    coordinates: raw.coordinates || (raw.lat != null && raw.lng != null ? { lat: raw.lat, lng: raw.lng, locationName: raw.location_name } : geospatial.coordinates),
-    boundingBox: raw.bounding_box || raw.bbox_coords || geospatial.boundingBox,
-    geojson: raw.geojson || raw.features,
+    coordinates: directCoordinates || geospatial.coordinates,
+    boundingBox: validBoundingBox(raw.bounding_box) ? raw.bounding_box : (validBoundingBox(raw.bbox_coords) ? raw.bbox_coords : geospatial.boundingBox),
+    geojson: geospatialAvailable ? (raw.geojson || raw.features) : undefined,
     sensorMetadata: raw.sensor_metadata || {
       platform: raw.satellite || 'Earth Observation Satellite',
       sensor: raw.sensor || 'Multi-Spectral / Radar Instrument',
