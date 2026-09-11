@@ -175,6 +175,35 @@ function cleanJudgeAnswer(answer: unknown, query: string): string {
     .trim();
 }
 
+/** Derive an image-space fraction when M2 returned region geometry but omitted the aggregate fraction. */
+function normalizeM2Data(data: Record<string, any>): Record<string, any> {
+  const normalized = { ...data };
+  const explicitFraction = Number(normalized.changed_fraction ?? normalized.change_fraction);
+  if (Number.isFinite(explicitFraction)) {
+    normalized.changed_fraction = explicitFraction;
+    normalized.change_fraction = explicitFraction;
+    return normalized;
+  }
+
+  const imageSize = normalized.image_size
+    || normalized.metadata?.image_size
+    || normalized.evidence?.image_size;
+  const width = Number(imageSize?.width);
+  const height = Number(imageSize?.height);
+  if (!(width > 0 && height > 0)) return normalized;
+
+  const changedPixels = Number(normalized.changed_pixels);
+  const regions = Array.isArray(normalized.regions) ? normalized.regions : [];
+  const regionPixels = regions.reduce((total: number, region: any) => total + Number(region?.pixel_count ?? 0), 0);
+  const pixels = Number.isFinite(changedPixels) && changedPixels > 0 ? changedPixels : regionPixels;
+  if (!(pixels > 0)) return normalized;
+
+  const fraction = Math.min(1, pixels / (width * height));
+  normalized.changed_fraction = fraction;
+  normalized.change_fraction = fraction;
+  return normalized;
+}
+
 /** Normalize the complete M5/M4 response without throwing away nested evidence. */
 function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisResponse {
   const toolResults: ToolResultRecord[] = Array.isArray(raw.results)
@@ -182,7 +211,9 @@ function normalizeBackendResponse(raw: any, payload: AnalysisPayload): AnalysisR
         tool: String(result.tool || 'unknown'),
         status: String(result.status || 'unknown'),
         confidence: Number.isFinite(Number(result.confidence)) ? Number(result.confidence) : 0,
-        data: result.data && typeof result.data === 'object' ? result.data : {},
+        data: /m2_change_detection/i.test(String(result.tool || ''))
+          ? normalizeM2Data(result.data && typeof result.data === 'object' ? result.data : {})
+          : (result.data && typeof result.data === 'object' ? result.data : {}),
         evidence: Array.isArray(result.evidence) ? result.evidence : [],
         error: result.error,
       }))
