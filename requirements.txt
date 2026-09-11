@@ -25,6 +25,9 @@ fastapi>=0.115
 uvicorn[standard]>=0.34
 python-multipart>=0.0.20
 httpx>=0.27
+# Required by the installed Starlette TestClient runtime in the validated
+# Python 3.14 environment.
+httpx2>=2.12
 
 # Test
 pytest>=9,<10
