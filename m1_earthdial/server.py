@@ -1,12 +1,9 @@
 """
 Reusable FastAPI server for M1 EarthDial inference.
 
-This server is intended for a CUDA-capable host such as a Google Colab T4.
-The local SatQuery M1 adapter sends only the image bytes and VQA request;
-model execution remains on the GPU server.
-
-Reference:
-    EarthDial_4B_RGB: akshaydudhane/EarthDial_4B_RGB
+This service is intended for a CUDA-capable host such as Google Colab T4/A100.
+It uses the official EarthDial model implementation and preprocessing path,
+with optional 4-bit NF4 quantization for lower-VRAM GPU runtimes.
 """
 
 import base64
@@ -18,12 +15,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from PIL import Image
-from transformers import AutoModel, AutoTokenizer
-from torchvision import transforms
+from transformers import AutoTokenizer
+
+from earthdial.model.internvl_chat import InternVLChatModel
+from m1_earthdial.preprocessing import get_image_tensor_transform
 
 MODEL_ID = os.getenv("EARTHDIAL_CHECKPOINT", "akshaydudhane/EarthDial_4B_RGB")
 HOST = os.getenv("EARTHDIAL_SERVER_HOST", "0.0.0.0")
 PORT = int(os.getenv("EARTHDIAL_SERVER_PORT", "8000"))
+LOAD_IN_4BIT = os.getenv("EARTHDIAL_LOAD_IN_4BIT", "true").lower() in {
+    "1", "true", "yes", "on"
+}
+GPU_MEMORY_GIB = float(os.getenv("EARTHDIAL_GPU_MEMORY_GIB", "14"))
+CPU_MEMORY_GIB = float(os.getenv("EARTHDIAL_CPU_MEMORY_GIB", "16"))
+BNB_QUANT_TYPE = os.getenv("EARTHDIAL_BNB_QUANT_TYPE", "nf4")
+BNB_DOUBLE_QUANT = os.getenv("EARTHDIAL_BNB_DOUBLE_QUANT", "true").lower() in {
+    "1", "true", "yes", "on"
+}
 
 app = FastAPI(
     title="SatQuery AI — EarthDial API",
@@ -43,9 +51,9 @@ class AnalyzeRequest(BaseModel):
 
     image_base64: str = Field(..., min_length=1)
     question: str = Field(..., min_length=2)
-    num_beams: int = Field(default=5, ge=1, le=10)
+    num_beams: int = Field(default=1, ge=1, le=10)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
-    max_new_tokens: int = Field(default=128, ge=1, le=512)
+    max_new_tokens: int = Field(default=64, ge=1, le=512)
 
 
 if not torch.cuda.is_available():
@@ -54,43 +62,49 @@ if not torch.cuda.is_available():
         "GPU runtime such as Google Colab T4/A100."
     )
 
-# EarthDial publishes BF16 weights. Use FP16 on CUDA devices without BF16 support.
 MODEL_DTYPE = torch.bfloat16
 if hasattr(torch.cuda, "is_bf16_supported") and not torch.cuda.is_bf16_supported():
     MODEL_DTYPE = torch.float16
 
-# Load once at process startup so every request reuses the same model.
 print(f"[M1] Loading EarthDial checkpoint: {MODEL_ID}")
 tokenizer = AutoTokenizer.from_pretrained(
     MODEL_ID,
     trust_remote_code=True,
     use_fast=False,
 )
-model = AutoModel.from_pretrained(
-    MODEL_ID,
-    low_cpu_mem_usage=True,
-    torch_dtype=MODEL_DTYPE,
-    device_map="auto",
-    trust_remote_code=True,
-).eval()
 
-vision_config = getattr(model.config, "vision_config", None)
+model_kwargs = {
+    "low_cpu_mem_usage": True,
+    "torch_dtype": MODEL_DTYPE,
+    "device_map": "auto",
+    "trust_remote_code": True,
+}
+
+if LOAD_IN_4BIT:
+    model_kwargs.update(
+        {
+            "max_memory": {
+                0: f"{GPU_MEMORY_GIB}GiB",
+                "cpu": f"{CPU_MEMORY_GIB}GiB",
+            },
+            "load_in_4bit": True,
+            "bnb_4bit_quant_type": BNB_QUANT_TYPE,
+            "bnb_4bit_compute_dtype": MODEL_DTYPE,
+            "bnb_4bit_use_double_quant": BNB_DOUBLE_QUANT,
+        }
+    )
+
+model = InternVLChatModel.from_pretrained(MODEL_ID, **model_kwargs).eval()
+
 image_size = getattr(model.config, "force_image_size", None) or getattr(
-    vision_config, "image_size", 448
+    model.config.vision_config, "image_size", 448
 )
-transform = transforms.Compose([
-    transforms.Resize(
-        (image_size, image_size),
-        interpolation=transforms.InterpolationMode.BICUBIC,
-    ),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225],
-    ),
-])
+transform = get_image_tensor_transform(input_size=image_size)
 
-print(f"[M1] EarthDial model loaded successfully using {MODEL_DTYPE}.")
+print(
+    f"[M1] EarthDial model loaded successfully using {MODEL_DTYPE}; "
+    f"4-bit={LOAD_IN_4BIT}."
+)
 
 
 @app.get("/health")
@@ -102,6 +116,7 @@ def health():
         "cuda": torch.cuda.is_available(),
         "device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "dtype": str(MODEL_DTYPE),
+        "load_in_4bit": LOAD_IN_4BIT,
     }
 
 
@@ -143,10 +158,7 @@ def analyze(request: AnalyzeRequest):
     if not answer:
         raise HTTPException(status_code=500, detail="EarthDial returned an empty answer.")
 
-    return {
-        "answer": answer,
-        "model": MODEL_ID,
-    }
+    return {"answer": answer, "model": MODEL_ID}
 
 
 if __name__ == "__main__":
