@@ -1,78 +1,48 @@
 """SAR speckle filtering algorithms including Lee filter and median filtering."""
 
 import logging
-from typing import Optional
 import numpy as np
 from scipy.ndimage import uniform_filter, median_filter
 
 logger = logging.getLogger(__name__)
 
 
-def lee_filter(
-    image: np.ndarray,
-    kernel_size: int = 5,
-    num_looks: float = 4.0,
-    damping_factor: float = 1.0,
-) -> np.ndarray:
-    """Apply standard Lee speckle filter on a 2D SAR image.
+def lee_filter(image: np.ndarray, kernel_size: int = 5, num_looks: float = 4.0, damping_factor: float = 1.0) -> np.ndarray:
+    """Apply a Lee speckle filter to a 2D SAR intensity image.
 
-    The Lee filter assumes a multiplicative noise model for SAR intensity:
-        I = R * u, where E[u] = 1, Var(u) = sigma_v^2 = 1 / num_looks.
-
-    The filtered reflectivity estimate is:
-        R_hat = local_mean + W * (I - local_mean)
-        W = max(0, (local_var - local_mean^2 * sigma_v^2) / (local_var * (1 + sigma_v^2)))
-
-    Fast vectorized implementation using scipy sliding uniform filters.
-
-    Args:
-        image: 2D numpy array (height, width).
-        kernel_size: Window size (must be an odd integer, e.g. 3, 5, 7).
-        num_looks: Equivalent Number of Looks (ENL) of the SAR product (default 4 for S1 GRD).
-        damping_factor: Weight scaling factor (default 1.0).
-
-    Returns:
-        Filtered 2D float32 array with identical shape, NaNs preserved.
+    Lee filtering assumes multiplicative noise, so callers must provide linear intensity.
+    Invalid/non-finite pixels remain NaN.
     """
     if image.ndim != 2:
         raise ValueError(f"Lee filter expects a 2D array, got shape {image.shape}")
-
     if kernel_size % 2 == 0 or kernel_size < 3:
         raise ValueError(f"kernel_size must be an odd integer >= 3, got {kernel_size}")
+    if num_looks <= 0:
+        raise ValueError(f"num_looks must be > 0, got {num_looks}")
 
-    nan_mask = np.isnan(image)
-    # Fill NaNs with 0 for convolution, track valid count
-    filled = np.where(nan_mask, 0.0, image).astype(np.float64)
-    valid_weights = np.where(nan_mask, 0.0, 1.0)
+    invalid = ~np.isfinite(image) | (image < 0)
+    filled = np.where(invalid, 0.0, image).astype(np.float64)
+    valid_weights = (~invalid).astype(np.float64)
 
-    # Compute local valid counts
     local_count = uniform_filter(valid_weights, size=kernel_size, mode="reflect")
-    min_valid_thresh = 1.0 / (kernel_size * kernel_size)
-
-    # Local mean
+    valid_region = local_count > 0.0
     local_sum = uniform_filter(filled, size=kernel_size, mode="reflect")
     local_mean = np.zeros_like(filled)
-    valid_region = local_count > min_valid_thresh
     local_mean[valid_region] = local_sum[valid_region] / local_count[valid_region]
 
-    # Local variance: Var(X) = E[X^2] - (E[X])^2
     local_sq_sum = uniform_filter(filled ** 2, size=kernel_size, mode="reflect")
     local_sq_mean = np.zeros_like(filled)
     local_sq_mean[valid_region] = local_sq_sum[valid_region] / local_count[valid_region]
     local_var = np.maximum(local_sq_mean - local_mean ** 2, 0.0)
 
-    # Noise variance
-    sigma_v2 = 1.0 / max(num_looks, 1.0)
-
-    # Adaptive weight W
+    sigma_v2 = 1.0 / num_looks
     denom = local_var * (1.0 + sigma_v2) + 1e-8
     numerator = local_var - (local_mean ** 2) * sigma_v2
-    w = np.clip(numerator / denom, 0.0, 1.0) * damping_factor
+    weight = np.clip(numerator / denom, 0.0, 1.0) * damping_factor
+    weight = np.clip(weight, 0.0, 1.0)
 
-    # Lee estimate
-    filtered = local_mean + w * (filled - local_mean)
-    filtered[nan_mask] = np.nan
-
+    filtered = local_mean + weight * (filled - local_mean)
+    filtered[invalid] = np.nan
     return filtered.astype(np.float32)
 
 
@@ -80,43 +50,54 @@ def apply_speckle_filter(
     image: np.ndarray,
     method: str = "lee",
     kernel_size: int = 5,
+    is_db: bool = False,
     **kwargs,
 ) -> np.ndarray:
-    """Apply speckle filter across single or multi-channel SAR raster data.
+    """Apply speckle filtering while respecting SAR scale.
 
-    Args:
-        image: Numpy array of shape (channels, height, width) or (height, width).
-        method: Filter algorithm ('lee', 'median', 'none').
-        kernel_size: Filter window size (must be odd, e.g. 3, 5, 7).
-        **kwargs: Additional parameters passed to the filter function.
-
-    Returns:
-        Filtered array matching input dimensions.
+    For dB input, the Lee/median operation is performed in linear intensity and the
+    result is converted back to dB. This prevents applying a multiplicative-noise
+    filter directly in logarithmic space.
     """
     if method == "none":
         return image.copy()
 
     is_2d = image.ndim == 2
-    arr = image[np.newaxis, ...] if is_2d else image.copy()
-    filtered_arr = np.empty_like(arr, dtype=np.float32)
+    if image.ndim not in (2, 3):
+        raise ValueError(f"SAR image must be 2D or 3D, got shape {image.shape}")
+
+    arr = image[np.newaxis, ...] if is_2d else np.asarray(image).copy()
+    filtered_arr = np.full(arr.shape, np.nan, dtype=np.float32)
 
     for c in range(arr.shape[0]):
-        channel = arr[c]
-        if method == "lee":
-            num_looks = kwargs.get("num_looks", 4.0)
-            filtered_arr[c] = lee_filter(
-                channel, kernel_size=kernel_size, num_looks=num_looks
-            )
-        elif method == "median":
-            nan_mask = np.isnan(channel)
-            # Median filter with NaN replacement
-            safe_chan = np.where(nan_mask, 0.0, channel)
-            med = median_filter(safe_chan, size=kernel_size, mode="reflect")
-            med[nan_mask] = np.nan
-            filtered_arr[c] = med.astype(np.float32)
+        channel = np.asarray(arr[c], dtype=np.float32)
+        invalid = ~np.isfinite(channel)
+
+        if is_db:
+            linear = np.full(channel.shape, np.nan, dtype=np.float32)
+            valid = ~invalid
+            linear[valid] = np.power(10.0, channel[valid] / 10.0).astype(np.float32)
+            working = linear
         else:
-            raise ValueError(
-                f"Unknown speckle filtering method '{method}'. Supported: 'lee', 'median', 'none'."
-            )
+            working = channel
+
+        if method == "lee":
+            filtered = lee_filter(working, kernel_size=kernel_size, num_looks=kwargs.get("num_looks", 4.0))
+        elif method == "median":
+            bad = ~np.isfinite(working)
+            safe = np.where(bad, 0.0, working)
+            med = median_filter(safe, size=kernel_size, mode="reflect")
+            filtered = med.astype(np.float32)
+            filtered[bad] = np.nan
+        else:
+            raise ValueError(f"Unknown speckle filtering method '{method}'. Supported: 'lee', 'median', 'none'.")
+
+        if is_db:
+            valid = np.isfinite(filtered) & (filtered > 0.0)
+            result = np.full(channel.shape, np.nan, dtype=np.float32)
+            result[valid] = 10.0 * np.log10(filtered[valid])
+            filtered_arr[c] = result
+        else:
+            filtered_arr[c] = filtered
 
     return filtered_arr[0] if is_2d else filtered_arr
