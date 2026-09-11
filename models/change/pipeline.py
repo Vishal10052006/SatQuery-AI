@@ -48,6 +48,7 @@ class M2Result:
     crs: str | None = None
     transform: tuple[float, float, float, float, float, float] | None = None
     geographic_bbox: dict[str, tuple[float, float]] | None = None
+    total_area_sq_m: float | None = None
     changed_area_sq_m: float | None = None
     quality: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -77,6 +78,7 @@ class M2Result:
             "crs": self.crs,
             "transform": self.transform,
             "geographic_bbox": self.geographic_bbox,
+            "total_area_sq_m": self.total_area_sq_m,
             "changed_area_sq_m": self.changed_area_sq_m,
             "quality": self.quality,
             "warnings": self.warnings,
@@ -126,6 +128,7 @@ class M2Result:
             "after_raster": self.metadata.get("after_meta", {}),
             "geospatial_reference_available": self.geospatial_reference_available,
             "crs": self.crs,
+            "total_area_sq_m": self.total_area_sq_m,
             "changed_area_sq_m": self.changed_area_sq_m,
             "quality": self.quality,
         }
@@ -224,12 +227,15 @@ def run_m2(
     georeferenced = bool(before_meta.get("georeferenced") and transform)
     overall_geo_bbox = None
     total_area_sq_m = None
+    changed_area_sq_m = None
 
     if georeferenced and transform:
         bw = before_meta.get("width", change_mask.shape[1])
         bh = before_meta.get("height", change_mask.shape[0])
         overall_geo_bbox = bbox_pixel_to_geo({"xmin": 0, "ymin": 0, "xmax": bw - 1, "ymax": bh - 1}, transform)
-        total_area_sq_m = calculate_ground_area(changed_pixels, transform, crs)
+        total_valid_pixels = int((before_prep.valid_mask & aligned_after.valid_mask).sum())
+        total_area_sq_m = calculate_ground_area(total_valid_pixels, transform, crs)
+        changed_area_sq_m = calculate_ground_area(changed_pixels, transform, crs)
 
         for r in change_regions:
             r.bbox_geo = bbox_pixel_to_geo(r.bbox_pixel, transform)
@@ -318,7 +324,8 @@ def run_m2(
         crs=crs,
         transform=transform,
         geographic_bbox=overall_geo_bbox,
-        changed_area_sq_m=total_area_sq_m,
+        total_area_sq_m=total_area_sq_m,
+        changed_area_sq_m=changed_area_sq_m,
         quality=quality,
         warnings=all_warnings,
         metadata=meta,
