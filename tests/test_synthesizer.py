@@ -187,7 +187,10 @@ def test_synthesizer_handles_failure() -> None:
     assert response.status == ExecutionStatus.FAILED
     assert response.confidence == 0.0
     assert response.error == "Model unavailable."
-    assert response.answer == "Analysis completed successfully."
+    assert (
+        response.answer
+        == "Analysis could not be completed because a required specialist failed."
+    )
 
 
 def test_synthesizer_handles_partial_execution() -> None:
