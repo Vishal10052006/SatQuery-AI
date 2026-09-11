@@ -1,4 +1,4 @@
-"""Referring Change Detection (RCD) adapter module.
+"""Referring Change Detection adapter module.
 
 Provides natural-language target-guided change detection:
 Before Image + After Image + Text Target -> Target-specific change mask & regions.
@@ -61,7 +61,6 @@ class RCDAdapter:
         """Check whether local neural model weights exist."""
         if self.checkpoint_path and self.checkpoint_path.is_file():
             return True
-        # Check standard checkpoints directory
         default_ckpts = [
             Path("checkpoints/rcd_model.pth"),
             Path("checkpoints/rcd/model.pt"),
@@ -80,7 +79,6 @@ class RCDAdapter:
     ) -> RCDResult:
         """Execute Referring Change Detection for a specific query target."""
         if self.is_model_available():
-            # Neural path: when model weights are placed in checkpoints/
             return self._run_neural_inference(before, after, target)
 
         if not allow_fallback:
@@ -98,25 +96,29 @@ class RCDAdapter:
                 ),
             )
 
-        # Deterministic fallback clearly marked as fallback_baseline
+        # This fallback detects temporal pixel differences only. It does NOT
+        # understand the target semantics, so never present its regions as
+        # target-specific neural predictions.
         diff = np.abs(after.gray - before.gray)
-        # Combine valid masks
         valid_mask = before.valid_mask & after.valid_mask
         diff[~valid_mask] = 0.0
 
         raw_mask = diff >= float(threshold)
         clean_mask, regions = extract_change_regions(raw_mask, diff, min_pixels=min_pixels)
 
-        # Tag regions with target
         for r in regions:
             r.target = target
 
         claim = (
-            f"Target '{target}': detected {len(regions)} region(s) using "
-            "deterministic fallback baseline (neural checkpoint pending)."
+            f"Temporal change regions surfaced for target '{target}' using a "
+            "deterministic fallback baseline; target semantics were not modeled."
             if target
-            else f"Detected {len(regions)} changed region(s) using temporal pixel difference."
+            else "Detected changed regions using temporal pixel difference."
         )
+
+        # Fallback confidence is deliberately conservative because the target
+        # itself has not been semantically recognized.
+        fallback_confidence = 0.35 if regions else 0.50
 
         return RCDResult(
             status="fallback_baseline" if target else "success",
@@ -126,7 +128,7 @@ class RCDAdapter:
             change_mask=clean_mask,
             difference_map=diff,
             regions=regions,
-            confidence=0.65 if regions else 0.85,
+            confidence=fallback_confidence,
             message=claim,
         )
 
