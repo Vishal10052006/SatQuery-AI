@@ -2,466 +2,223 @@
 
 > **An agentic satellite-query orchestration platform for converting natural-language geospatial questions into structured, executable analysis workflows.**
 
-SatQuery AI is the orchestration layer of a larger satellite intelligence system. It accepts a user's natural-language query, determines the required analytical intent, builds an execution plan, invokes the appropriate specialist modules, and returns a structured response with evidence, confidence, results, and an execution trace.
+SatQuery AI converts natural-language satellite questions into explicit analytical workflows. The system separates query understanding, deterministic planning, specialist execution, geospatial evidence generation, and frontend presentation.
 
-The current repository implements the **M4 Agentic Orchestration Layer** and its integration contracts for specialist capabilities including VQA, change detection, grounding, Optical + SAR analysis, and GIS processing.
-
----
-
-## 🎯 Problem
-
-Satellite imagery analysis is typically fragmented across multiple specialist tools and processing pipelines. A user asking a seemingly simple question such as:
-
-> *"What changed in this area between the two dates, and where exactly did the change occur?"*
-
-may require several dependent operations:
-
-1. Understand the user's intent.
-2. Identify the relevant satellite-analysis capability.
-3. Execute change detection.
-4. Ground the detected region spatially.
-5. Perform GIS/geospatial processing when required.
-6. Combine the outputs into one understandable response.
-
-SatQuery AI provides a **single query-driven orchestration interface** for this workflow.
-
----
-
-## 🚀 Core Concept
+## 🏗️ Architecture
 
 ```text
-                    Natural-Language Query
-                              │
-                              ▼
-                    ┌───────────────────┐
-                    │    Query Parser   │
-                    └─────────┬─────────┘
-                              │
-                              ▼
-                    ┌───────────────────┐
-                    │ Intent Classifier │
-                    └─────────┬─────────┘
-                              │
-                              ▼
-                    ┌───────────────────┐
-                    │   M4 Planner      │
-                    │ Execution Planning│
-                    └─────────┬─────────┘
-                              │
-                              ▼
-                    ┌───────────────────┐
-                    │     Executor      │
-                    └─────────┬─────────┘
-                              │
-             ┌────────────────┼────────────────┐
-             ▼                ▼                ▼
-          M1 VQA        M2 Change/Ground   M3 Optical+SAR
-             │                │                │
-             └────────────────┼────────────────┘
-                              │
-                              ▼
-                         M5 GIS Layer
-                              │
-                              ▼
-                    ┌───────────────────┐
-                    │    Synthesizer    │
-                    │ Answer + Evidence │
-                    └─────────┬─────────┘
-                              │
-                              ▼
-                    Structured AgentResponse
+M6 Frontend
+    ↓ HTTP / multipart
+M5 FastAPI / API Gateway
+    ↓
+M4 Agentic Controller
+    ├── Parser
+    ├── Classifier
+    ├── Planner
+    ├── Executor
+    └── Synthesizer
+    ↓
+┌────────┬────────┬────────────┐
+│ M1 VQA │ M2     │ M3         │
+│EarthDial│Change │Optical+SAR │
+│        │Ground │Fusion       │
+└────────┴───┬────┴────────────┘
+             ↓
+        M5 GIS Core
+             ↓
+       Structured Response
+             ↓
+          M6 UI
 ```
 
-The architecture deliberately separates **query understanding, planning, execution, specialist integration, and response synthesis** so that individual satellite-analysis modules can evolve independently.
+The orchestration layer is contract-first: specialist implementations are isolated behind adapters and return structured `ToolResult` objects. M2/M3 native results are preserved for downstream evidence and GIS processing.
 
----
+## 🎯 Supported Workflows
 
-## 🧠 Supported Query Intents
+| Workflow | Route |
+|---|---|
+| Image understanding | M6 → M5 → M4 → M1 → M4 → M6 |
+| Change + location | M6 → M5 → M4 → M2 Change → M2 Grounding → M5 GIS → M4 → M6 |
+| Optical + SAR | M6 → M5 → M4 → M3 → optional M5 GIS → M4 → M6 |
+| Direct GIS evidence | M4 → M5 GIS |
 
-The current M4 schema defines the following high-level intents:
+## 🧩 Modules
 
-| Intent | Purpose | Specialist |
-|---|---|---|
-| `VQA` | Ask questions about satellite imagery | M1 VQA |
-| `CHANGE_DETECTION` | Detect changes between observations | M2 Change Detection |
-| `GROUNDING` | Locate/ground objects or regions in imagery | M2 Grounding |
-| `OPTICAL_SAR` | Combine or analyze optical and SAR information | M3 Optical + SAR |
+### M1 — EarthDial / VQA
+- Earth-observation visual question answering boundary
+- preprocessing and image handling
+- direct/remote inference adapters
+- explicit model-health and fallback semantics
+- heavyweight production inference is environment-dependent
 
-The planner can also chain operations when a query requires multiple capabilities. For example, a change-detection query requiring geographic localization can execute **Change Detection → Grounding → GIS**.
+### M2 — Change Detection + Grounding
+- raster validation and preprocessing
+- true geospatial registration/reprojection
+- deterministic absolute-difference baseline
+- RCD/model adapter boundary
+- region extraction and grounding
+- geospatial coordinates and area calculations
+- honest fallback semantics when trained weights are unavailable
 
----
+### M3 — Optical + SAR Fusion
+- optical raster loading, cloud masking and normalization
+- SAR calibration, dB conversion, normalization and Lee speckle filtering
+- DEM-aware terrain-correction adapter with explicit limitations
+- CRS/grid reprojection and fine alignment
+- optical feature extraction and SAR cross-ratio features
+- early channel-level fusion
+- feature-fusion model architecture
+- trained-weight-only scientific inference
+- multimodal confidence assessment
 
-## 🧩 System Modules
+M3 deliberately does **not** treat an untrained neural network as a scientific predictor. Without trained weights, the pipeline returns a partial result and clearly reports that model inference is unavailable. fileciteturn219file0L1-L2
 
-### M4 Agentic Controller
+### M4 — Agentic Controller
+- deterministic query parser/classifier
+- execution planner
+- registry and adapters
+- dependency-aware executor
+- response synthesis
+- evidence/confidence propagation
+- API and acceptance contracts
 
-The M4 layer is responsible for coordinating the complete query lifecycle:
+### M5 — GIS / Geospatial Evidence
+- CRS-aware raster processing
+- pixel-to-geographic localization
+- polygons and bounding boxes
+- area calculation
+- GeoJSON/evidence artifacts
+- interactive map generation
+- M4 adapter integration
 
-- Query parsing
-- Intent classification
-- Execution planning
-- Specialist selection
-- Ordered tool execution
-- Result collection
-- Evidence propagation
-- Response synthesis
-- Execution tracing
-- Failure/partial-result handling
+### M6 — Frontend / Judge Dashboard
+- React/Vite dashboard
+- image and temporal-pair upload
+- Optical + SAR upload workflow
+- VQA/change/GIS/evidence views
+- history/report/team architecture views
+- live FastAPI contract
 
-### Specialist Integration Adapters
-
-The repository provides standardized adapter boundaries for:
-
-- **M1 — VQA**
-- **M2 — Change Detection**
-- **M2 — Grounding**
-- **M3 — Optical + SAR**
-- **M5 — GIS**
-
-These adapters isolate M4 from specialist implementation details and provide a consistent interface for future model/service integration.
-
-### Query Contract Layer
-
-Pydantic schemas define explicit contracts for:
-
-- `QueryRequest`
-- `ParsedQuery`
-- `PlanStep`
-- `ExecutionPlan`
-- `Evidence`
-- `ToolResult`
-- `AgentResponse`
-
-This creates a stable interface between the orchestration layer and the rest of the application.
-
----
-
-## 📁 Repository Structure
+## 🔌 M4 Specialist Contract
 
 ```text
-SatQuery-AI/
-│
-├── app/
-│   ├── adapters/
-│   │   ├── common.py
-│   │   ├── m1_vqa_adapter.py
-│   │   ├── m2_change_adapter.py
-│   │   ├── m2_grounding_adapter.py
-│   │   ├── m3_optical_sar_adapter.py
-│   │   ├── m5_gis_adapter.py
-│   │   └── register.py
-│   │
-│   ├── agents/
-│   │   ├── bootstrap.py
-│   │   ├── controller.py
-│   │   ├── executor.py
-│   │   ├── planner.py
-│   │   └── synthesizer.py
-│   │
-│   ├── query/
-│   │   ├── classifier.py
-│   │   ├── parser.py
-│   │   ├── registry.py
-│   │   └── schemas.py
-│   │
-│   ├── api.py
-│   ├── __init__.py
-│   └── __main__.py
-│
-├── demo/
-│   └── m4_demo.py
-│
-├── tests/
-│   ├── test_adapter_registration.py
-│   ├── test_adapters.py
-│   ├── test_api.py
-│   ├── test_bootstrap.py
-│   ├── test_classifier.py
-│   ├── test_controller.py
-│   ├── test_executor.py
-│   ├── test_m4_acceptance.py
-│   ├── test_parser.py
-│   ├── test_planner.py
-│   ├── test_query_matrix.py
-│   ├── test_registry.py
-│   ├── test_schemas.py
-│   ├── test_specialist_contract.py
-│   └── test_synthesizer.py
-│
-├── .gitignore
-├── README.md
-└── requirements.txt
+M4 Executor
+   │
+   ├── M1 Adapter → EarthDial
+   ├── M2 Adapter → Change Detection
+   ├── M2 Adapter → Grounding
+   ├── M3 Adapter → Optical + SAR
+   └── M5 Adapter → GIS
 ```
 
----
+Every specialist result is normalized into a stable contract containing status, confidence, structured data, evidence, and errors where applicable.
 
-## ⚙️ Execution Flow
+## 🌐 Live API
 
-A typical request follows this pipeline:
+FastAPI exposes:
 
-```text
-User Query
-   ↓
-QueryRequest
-   ↓
-Query Parser
-   ↓
-Intent Classifier
-   ↓
-ParsedQuery
-   ↓
-Query Planner
-   ↓
-ExecutionPlan
-   ↓
-Executor
-   ↓
-Specialist Adapter(s)
-   ↓
-ToolResult(s)
-   ↓
-Synthesizer
-   ↓
-AgentResponse
-```
+- `GET /health`
+- `GET /api/health` — compatibility alias
+- `POST /api/v1/mission` — JSON mission endpoint
+- `POST /api/analyze` — M6 multipart analysis endpoint
+- `POST /api/v1/change-detection` — temporal-pair upload endpoint
+- `/outputs/*` — generated artifact serving
 
-For multi-step analysis, the executor passes the appropriate previous results into subsequent steps rather than treating every specialist as an isolated request.
+The live multipart API accepts:
 
----
+- `image` for image understanding
+- `before_image` + `after_image` for change detection
+- `optical_image` + `sar_image` for Optical + SAR
 
-## 💻 Public API
-
-SatQuery exposes a small integration surface through `app/api.py`.
-
-```python
-from app.api import ask
-
-response = ask(
-    "Detect changes in the construction area between the two images."
-)
-
-print(response.answer)
-print(response.confidence)
-print(response.evidence)
-```
-
-The public API accepts an optional runtime context for application-specific inputs such as image identifiers, temporal image pairs, Optical/SAR data, and other processing metadata.
-
-```python
-from app.api import ask
-
-response = ask(
-    "Where did the land-use change occur?",
-    context={
-        "before": "before_image.tif",
-        "after": "after_image.tif",
-    },
-)
-```
-
-The caller receives a structured `AgentResponse` rather than depending directly on specialist implementation details.
-
----
+CORS origins are configurable through `SATQUERY_CORS_ORIGINS`.
 
 ## 🧪 Testing
 
-The project includes unit, integration, contract, query-matrix, and acceptance coverage for the M4 runtime.
-
-Run the complete test suite from the project root:
+Run the complete Python suite:
 
 ```bash
 pytest -q
 ```
 
-For a focused test run:
+Frontend verification:
 
 ```bash
-pytest tests/test_planner.py -q
-pytest tests/test_controller.py -q
-pytest tests/test_executor.py -q
-pytest tests/test_m4_acceptance.py -q
+cd M6/frontend
+npm install
+npm run lint
+npm run build
 ```
 
----
+The CI integration workflow verifies the Python integration suite and M6 frontend lint/build. At the time of this update, the newest workflow run is still executing, so its final result must be checked in GitHub Actions rather than assumed. fileciteturn243file0L1-L2
 
-## 🛠️ Local Setup
-
-### 1. Clone the repository
+## ⚙️ Local Setup
 
 ```bash
 git clone https://github.com/Vishal10052006/SatQuery-AI.git
 cd SatQuery-AI
-```
-
-### 2. Create a virtual environment
-
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
 pip install -r requirements.txt
-```
-
-### 4. Run the tests
-
-```bash
 pytest -q
 ```
 
-### 5. Run the M4 demonstration
+Run the API:
 
 ```bash
-python demo/m4_demo.py
+uvicorn api.main:app --reload --port 8000
 ```
 
----
+Open the judge workspace at `http://localhost:8000/` or `http://localhost:8000/dashboard`.
 
-## 🔌 Specialist Contract Architecture
+## 📊 Current Engineering Status
 
-M4 does not need to know how an individual specialist model is implemented.
+| Module | Status | Assessment |
+|---|---|---|
+| M1 | 🟢 Integrated | ~90% |
+| M2 | 🟢 Integrated | ~95% |
+| M3 | 🟢 Integrated | ~95% after hardening |
+| M4 | 🟢 Core complete | ~95% |
+| M5 | 🟢 Integrated | ~90% |
+| M6 | 🟢 Demo-ready | ~85% |
 
-Instead, specialist capabilities are exposed through adapters and standardized result contracts:
+### What is proven
 
-```text
-                    M4 Executor
-                         │
-          ┌──────────────┼──────────────┐
-          ▼              ▼              ▼
-      M1 Adapter     M2 Adapter     M3 Adapter
-          │              │              │
-          ▼              ▼              ▼
-      VQA Model      M2 Models      Optical/SAR
-                         │
-                         ▼
-                    M5 GIS Adapter
-```
+Repository tests and integration contracts establish the software wiring and deterministic behavior. M6's latest workflow has already completed frontend lint successfully and was progressing through the frontend build while the Python job was installing its runtime dependencies. fileciteturn243file0L1-L2
 
-This enables specialist implementations to be replaced or upgraded without rewriting the core orchestration logic.
+### What is not yet proven
 
----
+Passing tests do not establish scientific accuracy on final SIH satellite datasets, availability of heavyweight production checkpoints, GPU performance, or production-load behavior. Those require validation in the intended runtime environment.
 
-## 📊 Structured Result Model
+## 👥 SIH Team Work Split
 
-Every specialist execution is normalized into a `ToolResult` containing:
+| Member | Primary responsibility |
+|---|---|
+| M1 | EarthDial / VQA specialist |
+| M2 | Change detection + grounding |
+| M3 | Optical + SAR fusion |
+| M4 | Agentic controller / query intelligence |
+| M5 | GIS + backend/API |
+| M6 | Frontend + judge-facing integration |
 
-- **Tool identity**
-- **Execution status**
-- **Confidence score**
-- **Structured data**
-- **Evidence references**
-- **Error information when applicable**
+The architecture/progress document contains the detailed module assessment and judge-facing workflows.
 
-The final `AgentResponse` additionally exposes:
+## 🗺️ Judge Demo Flow
 
-- Natural-language answer
-- Overall confidence
-- Detected intent
-- Evidence
-- Individual tool results
-- Execution trace
-- Error/partial-result state
+### 1. VQA
+Upload an Earth-observation image → ask a natural-language question → M4 routes to M1 → answer and evidence appear in M6.
 
-This structure is designed to make the backend suitable for a downstream frontend, GIS visualization layer, or higher-level application module.
+### 2. Change detection
+Upload BEFORE + AFTER → M4 routes to M2 → detected regions are grounded → M5 produces geospatial evidence → M6 renders the result.
 
----
+### 3. Optical + SAR
+Upload optical + SAR → M4 routes to M3 → data are independently preprocessed and registered → multimodal fusion/inference is attempted only when trained weights exist → confidence and evidence are returned to M6.
 
-## 🗺️ Roadmap
+## 🔐 Honesty / Scientific Safety
 
-### Current — M4 Agentic Orchestration
-
-- [x] Query schemas and contracts
-- [x] Query parsing
-- [x] Intent classification
-- [x] Deterministic execution planning
-- [x] Specialist registry
-- [x] Specialist adapter contracts
-- [x] Multi-step execution
-- [x] Response synthesis
-- [x] Public query API
-- [x] M4 CLI demonstration
-- [x] Acceptance and regression tests
-
-### Next Integration Stage
-
-- [ ] Connect production M1 VQA inference
-- [ ] Connect production M2 change-detection inference
-- [ ] Connect production M2 grounding/localization
-- [ ] Connect production M3 Optical + SAR inference
-- [ ] Connect production M5 GIS processing
-- [ ] Integrate real satellite datasets
-- [ ] Add production authentication and request management
-- [ ] Expose the orchestration layer to the frontend
-- [ ] Add map-based result visualization
-- [ ] Add observability and production deployment
-
----
-
-## 🏗️ Design Principles
-
-### 1. Separation of Concerns
-
-Query understanding, planning, execution, specialist inference, and response synthesis are separate components.
-
-### 2. Contract-First Integration
-
-Specialist modules communicate with M4 through explicit schemas instead of tightly coupled implementation details.
-
-### 3. Deterministic Orchestration
-
-The current planner produces explicit execution plans from structured query information, making execution behavior testable and reproducible.
-
-### 4. Evidence-Aware Responses
-
-Results are designed to carry evidence such as masks, overlays, bounding boxes, polygons, coordinates, and statistics instead of returning an opaque answer only.
-
-### 5. Extensibility
-
-New specialist capabilities can be introduced through the adapter/registry architecture without redesigning the entire controller.
-
----
-
-## 🌍 Intended Applications
-
-SatQuery AI is designed for satellite and geospatial intelligence workflows such as:
-
-- Land-use and land-cover analysis
-- Infrastructure monitoring
-- Construction detection
-- Environmental change analysis
-- Disaster and damage assessment
-- Agricultural monitoring
-- Urban expansion analysis
-- Optical/SAR comparative analysis
-- Geographic localization and mapping
-
----
-
-## 🔐 Project Status
-
-**Status: Active Development / Working M4 Integration Layer**
-
-The repository currently represents the orchestration and integration foundation of the SatQuery AI system. Specialist capabilities are exposed through defined contracts so that real inference models and geospatial processing services can be integrated progressively.
-
-> **Important:** The M4 layer is an orchestration system. Its specialist adapters are integration boundaries; production satellite inference depends on the corresponding specialist implementations being connected.
-
----
-
-## 👥 Team
-
-**SatQuery AI** — Smart India Hackathon Project
-
-Built as a modular AI-driven satellite-query platform with a focus on natural-language interaction, multi-agent orchestration, remote-sensing analysis, and geospatial intelligence.
-
----
+SatQuery distinguishes **software capability**, **architecture baselines**, **fallback algorithms**, and **trained-model inference**. A missing checkpoint is never silently represented as a successful scientific prediction. Likewise, geospatial transformations are performed only when the required metadata are available; otherwise the system reports the limitation.
 
 ## 📜 License
 
 License information will be added as the project moves toward public release.
-
----
 
 **SatQuery AI 🛰️ — Ask questions about satellite data. Let the system plan the analysis.**
