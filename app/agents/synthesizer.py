@@ -39,39 +39,46 @@ class ResponseSynthesizer:
                 area = data.get("changed_area_sq_m")
                 changed_fraction = data.get("changed_fraction", data.get("change_fraction"))
                 quality = data.get("quality") or {}
-                water_excluded = any("water" in str(w).lower() for w in data.get("warnings", []))
+                water_excluded = any("water" in str(w).lower() or "river" in str(w).lower() or "lake" in str(w).lower() for w in data.get("warnings", []))
                 detector = str(data.get("detector", data.get("model", "M2 change detector")))
                 baseline = "fallback" in detector.lower() or "baseline" in detector.lower()
 
                 subject = f" for '{target}'" if target else ""
                 if detected:
                     if baseline:
-                        answer = f"Detected {regions} temporal difference zone{'s' if regions != 1 else ''}{subject} between the supplied observations."
+                        first = f"1. Change detected: {regions} temporal difference zone{'s' if regions != 1 else ''}{subject}."
                     else:
-                        answer = f"Detected {regions} meaningful change zone{'s' if regions != 1 else ''}{subject} between the supplied observations."
+                        first = f"1. Change detected: {regions} change zone{'s' if regions != 1 else ''}{subject}."
+
                     if area is not None and quality.get("georeferenced", False):
                         try:
                             hectares = float(area) / 10000.0
-                            answer += f" Estimated changed surface is {hectares:.2f} ha."
+                            second = f"2. Changed surface: approximately {hectares:.2f} hectares."
                         except (TypeError, ValueError):
-                            pass
+                            second = "2. Changed surface: not available from the supplied spatial reference."
                     elif changed_fraction is not None:
                         try:
-                            answer += f" The detected difference covers {float(changed_fraction) * 100:.2f}% of the image area."
+                            second = f"2. Changed surface: {float(changed_fraction) * 100:.2f}% of the image area."
                         except (TypeError, ValueError):
-                            pass
+                            second = "2. Changed surface: not available."
+                    else:
+                        second = "2. Changed surface: not available from the returned evidence."
                 else:
-                    answer = f"No temporal difference region was detected{subject} between the supplied observations."
+                    first = f"1. Change detected: no temporal difference zone was returned{subject}."
+                    second = "2. Changed surface: 0% of the image area based on the returned change mask." 
+
+                third = "3. Location: image space only; the supplied images are not georeferenced."
+                if quality.get("georeferenced", False):
+                    third = "3. Location: geographic coordinates are available from the supplied raster reference."
 
                 if baseline:
-                    answer += " The current M2 fallback is a temporal image-difference baseline; it does not prove that every detected zone is a new building, road, or other semantic land-use change."
-                if water_excluded:
-                    answer += " Persistent water signatures were excluded from land-change evidence to reduce river/lake boundary false positives."
-                if not quality.get("georeferenced", False):
-                    answer += " The supplied images are not georeferenced, so localization is reported in image space rather than as geographic coordinates."
-                if m5 and m5.status == ExecutionStatus.PARTIAL:
-                    answer += " GIS enrichment is partial because geographic reference data is unavailable."
-                return answer
+                    fourth = "4. Method note: M2 is using a deterministic temporal image-difference baseline, not a semantic building/road classifier."
+                else:
+                    fourth = "4. Method: M2 change-detection specialist result."
+
+                fifth = "5. Water: persistent water signatures were excluded from the land-change mask to reduce river/lake false positives." if water_excluded else "5. Water: not separately classified by M2."
+                sixth = "6. GIS: geographic enrichment is partial because spatial reference data is unavailable." if m5 and m5.status == ExecutionStatus.PARTIAL else "6. GIS: geographic enrichment available where raster reference data is present."
+                return "\n".join((first, second, third, fourth, fifth, sixth))
 
         preferred = ("answer", "summary", "description", "finding", "message", "result")
         messages: list[str] = []
