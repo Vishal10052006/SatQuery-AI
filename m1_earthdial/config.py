@@ -13,13 +13,15 @@ class EarthDialConfig:
     """Configuration parameters for EarthDial execution."""
 
     # Execution backend: 'auto', 'remote', 'direct', or 'mock'.
-    # 'auto' prefers a local CUDA GPU, then a reachable remote server.
+    # 'auto' prefers a local CUDA GPU, then a reachable EarthDial remote server.
     # If neither is available, auto mode uses the deterministic mock backend
     # so local development and CI remain usable without a GPU.
     backend: str = os.getenv("EARTHDIAL_BACKEND", "auto").lower()
 
-    # Remote server URL (Google Colab FastAPI / ngrok endpoint)
-    api_url: str = os.getenv("EARTHDIAL_API_URL", "http://localhost:8000")
+    # EarthDial remote server URL (Google Colab FastAPI / ngrok endpoint).
+    # Do NOT default this to the M5 SatQuery API on port 8000: M5 exposes its
+    # own /health endpoint and would otherwise be mistaken for EarthDial.
+    api_url: str = os.getenv("EARTHDIAL_API_URL", "http://localhost:7860")
 
     # Request timeout in seconds for remote inference
     timeout_seconds: int = int(os.getenv("EARTHDIAL_TIMEOUT", "90"))
