@@ -66,73 +66,32 @@ class AgentController:
         request: QueryRequest,
         context: dict[str, Any] | None = None,
     ) -> AgentResponse:
-        """
-        Execute the complete M4 agent pipeline.
-        """
-
+        """Execute the complete M4 agent pipeline."""
         try:
-            # ------------------------------------------------
-            # 1. Parse natural-language query.
-            # ------------------------------------------------
-
             parsed_query = self.parser.parse(
                 request.query,
                 images=request.images,
             )
 
-            # ------------------------------------------------
-            # 2. Classify intent.
-            # ------------------------------------------------
-
             self.classifier.classify(parsed_query)
-
-            # ------------------------------------------------
-            # 3. Create specialist execution plan.
-            # ------------------------------------------------
-
             plan = self.planner.create_plan(parsed_query)
 
-            # ------------------------------------------------
-            # 4. Prepare runtime context.
-            #
-            # QueryRequest images are automatically available.
-            # Caller-provided context can add before/after,
-            # optical, SAR, etc.
-            # ------------------------------------------------
-
             runtime_context = dict(context or {})
-
-            # Only provide images when actual image inputs exist.
-            # An empty list must be treated as missing input.
             if request.images:
-                runtime_context.setdefault(
-                    "images",
-                    request.images,
-                )
-
-            # ------------------------------------------------
-            # 5. Execute specialist tools.
-            # ------------------------------------------------
+                runtime_context.setdefault("images", request.images)
 
             report = self.executor.execute(
                 plan,
                 context=runtime_context,
             )
 
-            # ------------------------------------------------
-            # 6. Synthesize final AgentResponse.
-            # ------------------------------------------------
-
             return self.synthesizer.synthesize(
                 intent=parsed_query.intent,
                 report=report,
+                parsed_query=parsed_query,
             )
 
         except Exception as exc:
-            # ------------------------------------------------
-            # Controlled controller-level failure.
-            # ------------------------------------------------
-
             return AgentResponse(
                 status=ExecutionStatus.FAILED,
                 answer="Unable to process the query.",
