@@ -321,7 +321,7 @@ function getMatchingDemoResponse(payload: AnalysisPayload): AnalysisResponse {
     primaryImageUrl: payload.primaryImage?.previewUrl || base.primaryImageUrl,
     beforeImageUrl: payload.beforeImage?.previewUrl || base.beforeImageUrl,
     afterImageUrl: payload.afterImage?.previewUrl || base.afterImageUrl,
-    opticalImageUrl: payload.opticalImage?.previewUrl || base.optResponse,
+    opticalImageUrl: payload.opticalImage?.previewUrl || base.opticalImageUrl,
     sarImageUrl: payload.sarImage?.previewUrl || base.sarImageUrl,
     coordinates: base.coordinates,
     boundingBox: base.boundingBox,
