@@ -48,26 +48,61 @@ class ResponseSynthesizer:
             m5 = next((r for r in results if r.tool.value == "m5_gis"), None)
             if m2:
                 data = m2.data or {}
-                target = parsed_query.target if parsed_query and parsed_query.target else data.get("target")
-                operation = parsed_query.operation.value if parsed_query else "detect_change"
-                region_values = data.get("regions", [])
-                regions = len(region_values) if isinstance(region_values, list) else int(data.get("number_of_regions", 0) or 0)
-                detected = bool(data.get("change_detected", False)) or regions > 0
-                area = data.get("changed_area_sq_m")
-                changed_fraction = data.get("changed_fraction", data.get("change_fraction"))
-                quality = data.get("quality") or {}
-                detector = str(data.get("detector", data.get("model", "M2 change detector")))
-                baseline = "fallback" in detector.lower() or "baseline" in detector.lower()
+                has_structured_change = any(
+                    key in data
+                    for key in (
+                        "change_detected",
+                        "changed_fraction",
+                        "change_fraction",
+                        "changed_area_sq_m",
+                        "regions",
+                        "number_of_regions",
+                    )
+                )
+                if m2.status != ExecutionStatus.FAILED and (parsed_query is not None or has_structured_change):
+                    target = parsed_query.target if parsed_query and parsed_query.target else data.get("target")
+                    operation = parsed_query.operation.value if parsed_query else "detect_change"
+                    region_values = data.get("regions", [])
+                    regions = len(region_values) if isinstance(region_values, list) else int(data.get("number_of_regions", 0) or 0)
+                    detected = bool(data.get("change_detected", False)) or regions > 0
+                    area = data.get("changed_area_sq_m")
+                    changed_fraction = data.get("changed_fraction", data.get("change_fraction"))
+                    quality = data.get("quality") or {}
+                    detector = str(data.get("detector", data.get("model", "M2 change detector")))
+                    baseline = "fallback" in detector.lower() or "baseline" in detector.lower()
 
-                if operation == "detect_new":
-                    subject = target or "new construction"
+                    if operation == "detect_new":
+                        subject = target or "new construction"
+                        if detected:
+                            first = (
+                                f"1. Candidate {subject} areas: {regions} change region"
+                                f"{'s' if regions != 1 else ''} detected between the two images."
+                            )
+                        else:
+                            first = f"1. Candidate {subject} areas: no change region was returned."
+
+                        second = ResponseSynthesizer._format_changed_surface(
+                            area=area,
+                            changed_fraction=changed_fraction,
+                            quality=quality,
+                        )
+                        third = ResponseSynthesizer._format_location(quality)
+                        if baseline:
+                            fourth = (
+                                "4. Evidence note: these are candidate temporal-change regions; "
+                                "the current M2 baseline does not semantically prove that every region is a new building or construction."
+                            )
+                        else:
+                            fourth = "4. Method: target-guided M2 change detection was used for the requested new-change target."
+                        return "\n".join((first, second, third, fourth))
+
                     if detected:
                         first = (
-                            f"1. Candidate {subject} areas: {regions} change region"
-                            f"{'s' if regions != 1 else ''} detected between the two images."
+                            f"1. Change detected: {regions} temporal change zone"
+                            f"{'s' if regions != 1 else ''}."
                         )
                     else:
-                        first = f"1. Candidate {subject} areas: no change region was returned."
+                        first = "1. Change detected: no temporal change zone was returned."
 
                     second = ResponseSynthesizer._format_changed_surface(
                         area=area,
@@ -77,39 +112,14 @@ class ResponseSynthesizer:
                     third = ResponseSynthesizer._format_location(quality)
                     if baseline:
                         fourth = (
-                            "4. Evidence note: these are candidate temporal-change regions; "
-                            "the current M2 baseline does not semantically prove that every region is a new building or construction."
+                            "4. Method: deterministic temporal image-difference baseline; "
+                            "it detects visual change rather than assigning semantic object classes."
                         )
                     else:
-                        fourth = (
-                            "4. Method: target-guided M2 change detection was used for the requested new-change target."
-                        )
+                        fourth = "4. Method: M2 change-detection specialist result."
+                    if m5 and m5.status == ExecutionStatus.PARTIAL:
+                        fourth += " GIS enrichment is partial because spatial reference data is unavailable."
                     return "\n".join((first, second, third, fourth))
-
-                if detected:
-                    first = (
-                        f"1. Change detected: {regions} temporal change zone"
-                        f"{'s' if regions != 1 else ''}."
-                    )
-                else:
-                    first = "1. Change detected: no temporal change zone was returned."
-
-                second = ResponseSynthesizer._format_changed_surface(
-                    area=area,
-                    changed_fraction=changed_fraction,
-                    quality=quality,
-                )
-                third = ResponseSynthesizer._format_location(quality)
-                if baseline:
-                    fourth = (
-                        "4. Method: deterministic temporal image-difference baseline; "
-                        "it detects visual change rather than assigning semantic object classes."
-                    )
-                else:
-                    fourth = "4. Method: M2 change-detection specialist result."
-                if m5 and m5.status == ExecutionStatus.PARTIAL:
-                    fourth += " GIS enrichment is partial because spatial reference data is unavailable."
-                return "\n".join((first, second, third, fourth))
 
         preferred = ("answer", "summary", "description", "finding", "message", "result")
         messages: list[str] = []
