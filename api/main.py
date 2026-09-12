@@ -93,10 +93,21 @@ def _artifact_urls(result: dict) -> list[str]:
             name = Path(str(artifact)).name
             urls.append(f"/outputs/{name}")
 
+        # M2 exposes its visual products as explicit evidence fields. These
+        # must also be surfaced to M6 so the real change mask/overlay/composite
+        # can be rendered instead of only showing source imagery.
         for key in (
             "evidence_path",
             "geojson_path",
             "map_path",
+            "overlay_path",
+            "mask_path",
+            "composite_path",
+            "change_mask_path",
+            "visualization_path",
+            "overlay_url",
+            "mask_url",
+            "composite_url",
         ):
             artifact = data.get(key)
             if artifact:
